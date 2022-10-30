@@ -1,0 +1,24 @@
+# ninja log v5
+9	668	1667134893	CMakeFiles/netguard.dir/src/main/jni/netguard/icmp.c.o	9608f314acc4d868
+2	702	1667134893	CMakeFiles/netguard.dir/src/main/jni/netguard/session.c.o	133c43b2ce1d4004
+4	751	1667134893	CMakeFiles/netguard.dir/src/main/jni/netguard/ip.c.o	cccc7f1c811d884f
+7	852	1667134893	CMakeFiles/netguard.dir/src/main/jni/netguard/udp.c.o	6b3c7caa25f4f7c1
+1	994	1667134893	CMakeFiles/netguard.dir/src/main/jni/netguard/netguard.c.o	79b22dc6248d477f
+704	1038	1667134893	CMakeFiles/netguard.dir/src/main/jni/netguard/dhcp.c.o	6a6a1b3d84a2e655
+752	1075	1667134893	CMakeFiles/netguard.dir/src/main/jni/netguard/pcap.c.o	aa1f180b3f1730c7
+5	1076	1667134893	CMakeFiles/netguard.dir/src/main/jni/netguard/tcp.c.o	ae08320757d0fd49
+670	1085	1667134893	CMakeFiles/netguard.dir/src/main/jni/netguard/dns.c.o	adec3c43f8efcd28
+852	1106	1667134893	CMakeFiles/netguard.dir/src/main/jni/netguard/util.c.o	cb3d54526c7c6f66
+1106	1180	1667134894	../../../../build/intermediates/cxx/Debug/2r462m1k/obj/x86_64/libnetguard.so	c35e3dc9108207d0
+0	14	0	clean	8db6e12faefc138a
+6	267	1667135015	CMakeFiles/netguard.dir/src/main/jni/netguard/session.c.o	133c43b2ce1d4004
+7	315	1667135015	CMakeFiles/netguard.dir/src/main/jni/netguard/ip.c.o	cccc7f1c811d884f
+13	318	1667135015	CMakeFiles/netguard.dir/src/main/jni/netguard/icmp.c.o	9608f314acc4d868
+11	397	1667135015	CMakeFiles/netguard.dir/src/main/jni/netguard/udp.c.o	6b3c7caa25f4f7c1
+315	450	1667135015	CMakeFiles/netguard.dir/src/main/jni/netguard/dhcp.c.o	6a6a1b3d84a2e655
+318	464	1667135015	CMakeFiles/netguard.dir/src/main/jni/netguard/pcap.c.o	aa1f180b3f1730c7
+267	475	1667135015	CMakeFiles/netguard.dir/src/main/jni/netguard/dns.c.o	adec3c43f8efcd28
+5	509	1667135015	CMakeFiles/netguard.dir/src/main/jni/netguard/netguard.c.o	79b22dc6248d477f
+10	518	1667135015	CMakeFiles/netguard.dir/src/main/jni/netguard/tcp.c.o	ae08320757d0fd49
+398	539	1667135015	CMakeFiles/netguard.dir/src/main/jni/netguard/util.c.o	cb3d54526c7c6f66
+539	597	1667135015	../../../../build/intermediates/cxx/Debug/2r462m1k/obj/x86_64/libnetguard.so	c35e3dc9108207d0

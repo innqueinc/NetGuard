@@ -1,0 +1,24 @@
+# ninja log v5
+16	693	1667134889	CMakeFiles/netguard.dir/src/main/jni/netguard/icmp.c.o	306d74c4cc11821e
+9	1012	1667134889	CMakeFiles/netguard.dir/src/main/jni/netguard/ip.c.o	35f3a18b9cfc0b7a
+5	1028	1667134889	CMakeFiles/netguard.dir/src/main/jni/netguard/session.c.o	197f7d2120ca1c6b
+14	1041	1667134889	CMakeFiles/netguard.dir/src/main/jni/netguard/udp.c.o	d9e0369dc2e75028
+0	1196	1667134889	CMakeFiles/netguard.dir/src/main/jni/netguard/netguard.c.o	110067e8ff2bca3a
+695	1325	1667134889	CMakeFiles/netguard.dir/src/main/jni/netguard/dns.c.o	fd9b42fcbfa40dd3
+1028	1356	1667134890	CMakeFiles/netguard.dir/src/main/jni/netguard/pcap.c.o	ed51052e3e56b7e7
+1012	1365	1667134890	CMakeFiles/netguard.dir/src/main/jni/netguard/dhcp.c.o	eb83879a7d79a439
+1041	1448	1667134890	CMakeFiles/netguard.dir/src/main/jni/netguard/util.c.o	11bab7857851d6f2
+12	1462	1667134890	CMakeFiles/netguard.dir/src/main/jni/netguard/tcp.c.o	3ce0ff65fb81d129
+1463	1533	1667134890	../../../../build/intermediates/cxx/Debug/2r462m1k/obj/arm64-v8a/libnetguard.so	e9737eaf7af90972
+0	14	0	clean	8db6e12faefc138a
+11	894	1667135012	CMakeFiles/netguard.dir/src/main/jni/netguard/icmp.c.o	306d74c4cc11821e
+6	896	1667135012	CMakeFiles/netguard.dir/src/main/jni/netguard/ip.c.o	35f3a18b9cfc0b7a
+5	900	1667135012	CMakeFiles/netguard.dir/src/main/jni/netguard/session.c.o	197f7d2120ca1c6b
+10	975	1667135012	CMakeFiles/netguard.dir/src/main/jni/netguard/udp.c.o	d9e0369dc2e75028
+3	1112	1667135012	CMakeFiles/netguard.dir/src/main/jni/netguard/netguard.c.o	110067e8ff2bca3a
+897	1148	1667135012	CMakeFiles/netguard.dir/src/main/jni/netguard/dhcp.c.o	eb83879a7d79a439
+901	1160	1667135012	CMakeFiles/netguard.dir/src/main/jni/netguard/pcap.c.o	ed51052e3e56b7e7
+975	1184	1667135012	CMakeFiles/netguard.dir/src/main/jni/netguard/util.c.o	11bab7857851d6f2
+894	1185	1667135012	CMakeFiles/netguard.dir/src/main/jni/netguard/dns.c.o	fd9b42fcbfa40dd3
+7	1225	1667135012	CMakeFiles/netguard.dir/src/main/jni/netguard/tcp.c.o	3ce0ff65fb81d129
+1225	1555	1667135012	../../../../build/intermediates/cxx/Debug/2r462m1k/obj/arm64-v8a/libnetguard.so	e9737eaf7af90972

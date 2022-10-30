@@ -1,0 +1,38 @@
+{
+  "buildFiles": [
+    "/Users/johncarlo/Desktop/Opensource/NetGuard/app/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/johncarlo/Library/Android/sdk/cmake/3.18.1/bin/ninja",
+      "-C",
+      "/Users/johncarlo/Desktop/Opensource/NetGuard/app/.cxx/Debug/1d4146s1/x86",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/johncarlo/Library/Android/sdk/cmake/3.18.1/bin/ninja",
+    "-C",
+    "/Users/johncarlo/Desktop/Opensource/NetGuard/app/.cxx/Debug/1d4146s1/x86",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "netguard::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "x86",
+      "artifactName": "netguard",
+      "output": "/Users/johncarlo/Desktop/Opensource/NetGuard/app/build/intermediates/cxx/Debug/1d4146s1/obj/x86/libnetguard.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/Users/johncarlo/Library/Android/sdk/ndk/21.4.7075529/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang",
+      "cppCompilerExecutable": "/Users/johncarlo/Library/Android/sdk/ndk/21.4.7075529/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++"
+    }
+  },
+  "cFileExtensions": [
+    "c"
+  ],
+  "cppFileExtensions": []
+}
