@@ -1,0 +1,154 @@
+ninja: Entering directory `/Users/johncarlo/Desktop/Opensource/NetGuard-jni-context/app/.cxx/cmake/debug/armeabi-v7a'
+[1/11] Building C object CMakeFiles/netguard.dir/src/main/jni/netguard/icmp.c.o
+../../../../src/main/jni/netguard/icmp.c:53:43: warning: implicitly declaring library function 'strerror' with type 'char *(int)' [-Wimplicit-function-declaration]
+                        s->socket, errno, strerror(errno));
+                                          ^
+../../../../src/main/jni/netguard/icmp.c:53:43: note: include the header <string.h> or explicitly provide a declaration for 'strerror'
+../../../../src/main/jni/netguard/icmp.c:124:21: warning: implicitly declaring library function 'memset' with type 'void *(void *, int, unsigned int)' [-Wimplicit-function-declaration]
+                    memset(&pseudo, 0, sizeof(struct ip6_hdr_pseudo));
+                    ^
+../../../../src/main/jni/netguard/icmp.c:124:21: note: include the header <string.h> or explicitly provide a declaration for 'memset'
+../../../../src/main/jni/netguard/icmp.c:125:21: warning: implicitly declaring library function 'memcpy' with type 'void *(void *, const void *, unsigned int)' [-Wimplicit-function-declaration]
+                    memcpy(&pseudo.ip6ph_src, &s->icmp.daddr.ip6, 16);
+                    ^
+../../../../src/main/jni/netguard/icmp.c:125:21: note: include the header <string.h> or explicitly provide a declaration for 'memcpy'
+../../../../src/main/jni/netguard/icmp.c:179:30: warning: implicitly declaring library function 'memcmp' with type 'int (const void *, const void *, unsigned int)' [-Wimplicit-function-declaration]
+                           : memcmp(&cur->icmp.saddr.ip6, &ip6->ip6_src, 16) == 0 &&
+                             ^
+../../../../src/main/jni/netguard/icmp.c:179:30: note: include the header <string.h> or explicitly provide a declaration for 'memcmp'
+4 warnings generated.
+[2/11] Building C object CMakeFiles/netguard.dir/src/main/jni/netguard/session.c.o
+../../../../src/main/jni/netguard/session.c:27:43: warning: implicitly declaring library function 'strerror' with type 'char *(int)' [-Wimplicit-function-declaration]
+                        s->socket, errno, strerror(errno));
+                                          ^
+../../../../src/main/jni/netguard/session.c:27:43: note: include the header <string.h> or explicitly provide a declaration for 'strerror'
+../../../../src/main/jni/netguard/session.c:67:5: warning: implicitly declaring library function 'memset' with type 'void *(void *, int, unsigned int)' [-Wimplicit-function-declaration]
+    memset(&ev_pipe, 0, sizeof(struct epoll_event));
+    ^
+../../../../src/main/jni/netguard/session.c:67:5: note: include the header <string.h> or explicitly provide a declaration for 'memset'
+2 warnings generated.
+[3/11] Building C object CMakeFiles/netguard.dir/src/main/jni/netguard/ip.c.o
+../../../../src/main/jni/netguard/ip.c:46:43: warning: implicitly declaring library function 'strerror' with type 'char *(int)' [-Wimplicit-function-declaration]
+                        args->tun, errno, strerror(errno));
+                                          ^
+../../../../src/main/jni/netguard/ip.c:46:43: note: include the header <string.h> or explicitly provide a declaration for 'strerror'
+../../../../src/main/jni/netguard/ip.c:343:9: warning: implicitly declaring library function 'memset' with type 'void *(void *, int, unsigned int)' [-Wimplicit-function-declaration]
+        memset(saddr128, 0, 10);
+        ^
+../../../../src/main/jni/netguard/ip.c:343:9: note: include the header <string.h> or explicitly provide a declaration for 'memset'
+../../../../src/main/jni/netguard/ip.c:346:9: warning: implicitly declaring library function 'memcpy' with type 'void *(void *, const void *, unsigned int)' [-Wimplicit-function-declaration]
+        memcpy(saddr128 + 12, saddr, 4);
+        ^
+../../../../src/main/jni/netguard/ip.c:346:9: note: include the header <string.h> or explicitly provide a declaration for 'memcpy'
+../../../../src/main/jni/netguard/ip.c:396:14: warning: implicitly declaring library function 'memcmp' with type 'int (const void *, const void *, unsigned int)' [-Wimplicit-function-declaration]
+            (memcmp(uid_cache[i].saddr, saddr, version == 4 ? 4 : 16) == 0 ||
+             ^
+../../../../src/main/jni/netguard/ip.c:396:14: note: include the header <string.h> or explicitly provide a declaration for 'memcmp'
+../../../../src/main/jni/netguard/ip.c:458:28: warning: implicitly declaring library function 'strlen' with type 'unsigned int (const char *)' [-Wimplicit-function-declaration]
+        if (fields == 5 && strlen(shex) == ws * 8 && strlen(dhex) == ws * 8) {
+                           ^
+../../../../src/main/jni/netguard/ip.c:458:28: note: include the header <string.h> or explicitly provide a declaration for 'strlen'
+5 warnings generated.
+[4/11] Building C object CMakeFiles/netguard.dir/src/main/jni/netguard/udp.c.o
+../../../../src/main/jni/netguard/udp.c:63:43: warning: implicitly declaring library function 'strerror' with type 'char *(int)' [-Wimplicit-function-declaration]
+                        s->socket, errno, strerror(errno));
+                                          ^
+../../../../src/main/jni/netguard/udp.c:63:43: note: include the header <string.h> or explicitly provide a declaration for 'strerror'
+../../../../src/main/jni/netguard/udp.c:168:30: warning: implicitly declaring library function 'memcmp' with type 'int (const void *, const void *, unsigned int)' [-Wimplicit-function-declaration]
+                           : memcmp(&cur->udp.saddr.ip6, &ip6->ip6_src, 16) == 0 &&
+                             ^
+../../../../src/main/jni/netguard/udp.c:168:30: note: include the header <string.h> or explicitly provide a declaration for 'memcmp'
+../../../../src/main/jni/netguard/udp.c:210:9: warning: implicitly declaring library function 'memcpy' with type 'void *(void *, const void *, unsigned int)' [-Wimplicit-function-declaration]
+        memcpy(&s->udp.saddr.ip6, &ip6->ip6_src, 16);
+        ^
+../../../../src/main/jni/netguard/udp.c:210:9: note: include the header <string.h> or explicitly provide a declaration for 'memcpy'
+../../../../src/main/jni/netguard/udp.c:281:25: warning: implicitly declaring library function 'strstr' with type 'char *(const char *, const char *)' [-Wimplicit-function-declaration]
+            rversion = (strstr(redirect->raddr, ":") == NULL ? 4 : 6);
+                        ^
+../../../../src/main/jni/netguard/udp.c:281:25: note: include the header <string.h> or explicitly provide a declaration for 'strstr'
+../../../../src/main/jni/netguard/udp.c:310:9: warning: implicitly declaring library function 'memset' with type 'void *(void *, int, unsigned int)' [-Wimplicit-function-declaration]
+        memset(&s->ev, 0, sizeof(struct epoll_event));
+        ^
+../../../../src/main/jni/netguard/udp.c:310:9: note: include the header <string.h> or explicitly provide a declaration for 'memset'
+5 warnings generated.
+[5/11] Building C object CMakeFiles/netguard.dir/src/main/jni/netguard/pcap.c.o
+../../../../src/main/jni/netguard/pcap.c:41:77: warning: implicitly declaring library function 'strerror' with type 'char *(int)' [-Wimplicit-function-declaration]
+        log_android(ANDROID_LOG_ERROR, "clock_gettime error %d: %s", errno, strerror(errno));
+                                                                            ^
+../../../../src/main/jni/netguard/pcap.c:41:77: note: include the header <string.h> or explicitly provide a declaration for 'strerror'
+1 warning generated.
+[6/11] Building C object CMakeFiles/netguard.dir/src/main/jni/netguard/dhcp.c.o
+../../../../src/main/jni/netguard/dhcp.c:74:9: warning: implicitly declaring library function 'memcpy' with type 'void *(void *, const void *, unsigned int)' [-Wimplicit-function-declaration]
+        memcpy(response, request, sizeof(struct dhcp_packet));
+        ^
+../../../../src/main/jni/netguard/dhcp.c:74:9: note: include the header <string.h> or explicitly provide a declaration for 'memcpy'
+../../../../src/main/jni/netguard/dhcp.c:78:9: warning: implicitly declaring library function 'memset' with type 'void *(void *, int, unsigned int)' [-Wimplicit-function-declaration]
+        memset(&response->ciaddr, 0, sizeof(response->ciaddr));
+        ^
+../../../../src/main/jni/netguard/dhcp.c:78:9: note: include the header <string.h> or explicitly provide a declaration for 'memset'
+2 warnings generated.
+[7/11] Building C object CMakeFiles/netguard.dir/src/main/jni/netguard/netguard.c.o
+../../../../src/main/jni/netguard/netguard.c:70:72: warning: implicitly declaring library function 'strerror' with type 'char *(int)' [-Wimplicit-function-declaration]
+        log_android(ANDROID_LOG_WARN, "getrlimit error %d: %s", errno, strerror(errno));
+                                                                       ^
+../../../../src/main/jni/netguard/netguard.c:70:72: note: include the header <string.h> or explicitly provide a declaration for 'strerror'
+../../../../src/main/jni/netguard/netguard.c:227:5: warning: implicitly declaring library function 'memset' with type 'void *(void *, int, unsigned int)' [-Wimplicit-function-declaration]
+    memset(&rlim, 0, sizeof(struct rlimit));
+    ^
+../../../../src/main/jni/netguard/netguard.c:227:5: note: include the header <string.h> or explicitly provide a declaration for 'memset'
+../../../../src/main/jni/netguard/netguard.c:299:5: warning: implicitly declaring library function 'strcpy' with type 'char *(char *, const char *)' [-Wimplicit-function-declaration]
+    strcpy(socks5_addr, addr);
+    ^
+../../../../src/main/jni/netguard/netguard.c:299:5: note: include the header <string.h> or explicitly provide a declaration for 'strcpy'
+3 warnings generated.
+[8/11] Building C object CMakeFiles/netguard.dir/src/main/jni/netguard/util.c.o
+../../../../src/main/jni/netguard/util.c:82:18: warning: implicitly declaring library function 'strlen' with type 'unsigned int (const char *)' [-Wimplicit-function-declaration]
+    size_t len = strlen(hex);
+                 ^
+../../../../src/main/jni/netguard/util.c:82:18: note: include the header <string.h> or explicitly provide a declaration for 'strlen'
+../../../../src/main/jni/netguard/util.c:149:75: warning: implicitly declaring library function 'strerror' with type 'char *(int)' [-Wimplicit-function-declaration]
+        log_android(ANDROID_LOG_ERROR, "getsockname error %d: %s", errno, strerror(errno));
+                                                                          ^
+../../../../src/main/jni/netguard/util.c:149:75: note: include the header <string.h> or explicitly provide a declaration for 'strerror'
+2 warnings generated.
+[9/11] Building C object CMakeFiles/netguard.dir/src/main/jni/netguard/dns.c.o
+../../../../src/main/jni/netguard/dns.c:39:13: warning: implicitly declaring library function 'memcpy' with type 'void *(void *, const void *, unsigned int)' [-Wimplicit-function-declaration]
+            memcpy(qname + noff, data + ptr + 1, len);
+            ^
+../../../../src/main/jni/netguard/dns.c:39:13: note: include the header <string.h> or explicitly provide a declaration for 'memcpy'
+../../../../src/main/jni/netguard/dns.c:91:21: warning: implicitly declaring library function 'strcpy' with type 'char *(char *, const char *)' [-Wimplicit-function-declaration]
+                    strcpy(qname, name);
+                    ^
+../../../../src/main/jni/netguard/dns.c:91:21: note: include the header <string.h> or explicitly provide a declaration for 'strcpy'
+../../../../src/main/jni/netguard/dns.c:273:80: warning: implicitly declaring library function 'strerror' with type 'char *(int)' [-Wimplicit-function-declaration]
+            log_android(ANDROID_LOG_WARN, "UDP DNS write error %d: %s", errno, strerror(errno));
+                                                                               ^
+../../../../src/main/jni/netguard/dns.c:273:80: note: include the header <string.h> or explicitly provide a declaration for 'strerror'
+3 warnings generated.
+[10/11] Building C object CMakeFiles/netguard.dir/src/main/jni/netguard/tcp.c.o
+../../../../src/main/jni/netguard/tcp.c:92:45: warning: implicitly declaring library function 'strerror' with type 'char *(int)' [-Wimplicit-function-declaration]
+                            session, errno, strerror(errno));
+                                            ^
+../../../../src/main/jni/netguard/tcp.c:92:45: note: include the header <string.h> or explicitly provide a declaration for 'strerror'
+../../../../src/main/jni/netguard/tcp.c:265:17: warning: implicitly declaring library function 'memset' with type 'void *(void *, int, unsigned int)' [-Wimplicit-function-declaration]
+                memset(&icmp, 0, sizeof(struct icmp));
+                ^
+../../../../src/main/jni/netguard/tcp.c:265:17: note: include the header <string.h> or explicitly provide a declaration for 'memset'
+../../../../src/main/jni/netguard/tcp.c:281:21: warning: implicitly declaring library function 'memcpy' with type 'void *(void *, const void *, unsigned int)' [-Wimplicit-function-declaration]
+                    memcpy(&sicmp.saddr.ip6, &s->tcp.saddr.ip6, 16);
+                    ^
+../../../../src/main/jni/netguard/tcp.c:281:21: note: include the header <string.h> or explicitly provide a declaration for 'memcpy'
+../../../../src/main/jni/netguard/tcp.c:390:32: warning: implicitly declaring library function 'strlen' with type 'unsigned int (const char *)' [-Wimplicit-function-declaration]
+                uint8_t ulen = strlen(socks5_username);
+                               ^
+../../../../src/main/jni/netguard/tcp.c:390:32: note: include the header <string.h> or explicitly provide a declaration for 'strlen'
+../../../../src/main/jni/netguard/tcp.c:620:30: warning: implicitly declaring library function 'memcmp' with type 'int (const void *, const void *, unsigned int)' [-Wimplicit-function-declaration]
+                           : memcmp(&cur->tcp.saddr.ip6, &ip6->ip6_src, 16) == 0 &&
+                             ^
+../../../../src/main/jni/netguard/tcp.c:620:30: note: include the header <string.h> or explicitly provide a declaration for 'memcmp'
+../../../../src/main/jni/netguard/tcp.c:1009:24: warning: implicitly declaring library function 'strstr' with type 'char *(const char *, const char *)' [-Wimplicit-function-declaration]
+            version = (strstr(socks5_addr, ":") == NULL ? 4 : 6);
+                       ^
+../../../../src/main/jni/netguard/tcp.c:1009:24: note: include the header <string.h> or explicitly provide a declaration for 'strstr'
+6 warnings generated.
+[11/11] Linking C shared library ../../../../build/intermediates/cmake/debug/obj/armeabi-v7a/libnetguard.so

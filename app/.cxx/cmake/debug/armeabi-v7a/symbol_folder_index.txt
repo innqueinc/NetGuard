@@ -1,0 +1,1 @@
+/Users/johncarlo/Desktop/Opensource/NetGuard-jni-context/app/build/intermediates/cmake/debug/obj/armeabi-v7a

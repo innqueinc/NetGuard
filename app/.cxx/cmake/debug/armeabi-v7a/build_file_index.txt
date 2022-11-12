@@ -1,0 +1,1 @@
+/Users/johncarlo/Desktop/Opensource/NetGuard-jni-context/app/CMakeLists.txt

@@ -1,0 +1,3 @@
+/Users/johncarlo/Desktop/Opensource/NetGuard-jni-context/app/.cxx/Debug/3e3a1820/x86/CMakeFiles/rebuild_cache.dir
+/Users/johncarlo/Desktop/Opensource/NetGuard-jni-context/app/.cxx/Debug/3e3a1820/x86/CMakeFiles/edit_cache.dir
+/Users/johncarlo/Desktop/Opensource/NetGuard-jni-context/app/.cxx/Debug/3e3a1820/x86/CMakeFiles/netguard.dir

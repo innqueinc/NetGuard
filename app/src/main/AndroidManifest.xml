@@ -70,7 +70,8 @@
             android:configChanges="orientation|screenSize"
             android:label="@string/app_name"
             android:launchMode="singleTop"
-            android:resizeableActivity="true">
+            android:resizeableActivity="true"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -100,7 +101,8 @@
             android:name=".ActivitySettings"
             android:configChanges="orientation|screenSize"
             android:label="@string/menu_settings"
-            android:parentActivityName=".ActivityMain">
+            android:parentActivityName=".ActivityMain"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
             </intent-filter>
@@ -158,7 +160,8 @@
             android:name=".ActivityForwardApproval"
             android:configChanges="orientation|screenSize"
             android:label="@string/app_name"
-            android:theme="@style/AppDialog">
+            android:theme="@style/AppDialog"
+            android:exported="true">
             <intent-filter>
                 <action android:name="eu.faircode.netguard.START_PORT_FORWARD" />
                 <action android:name="eu.faircode.netguard.STOP_PORT_FORWARD" />
@@ -168,7 +171,8 @@
         <service
             android:name=".ServiceSinkhole"
             android:label="@string/app_name"
-            android:permission="android.permission.BIND_VPN_SERVICE">
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
@@ -176,7 +180,8 @@
 
         <service
             android:name=".ServiceExternal"
-            android:label="@string/app_name">
+            android:label="@string/app_name"
+            android:exported="true">
             <intent-filter>
                 <action android:name="eu.faircode.netguard.DOWNLOAD_HOSTS_FILE" />
             </intent-filter>
@@ -186,7 +191,8 @@
             android:name=".ServiceTileMain"
             android:icon="@drawable/ic_security_white_24dp"
             android:label="@string/app_name"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
@@ -196,7 +202,8 @@
             android:name=".ServiceTileGraph"
             android:icon="@drawable/ic_equalizer_white_24dp"
             android:label="@string/setting_stats_category"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
@@ -206,7 +213,8 @@
             android:name=".ServiceTileFilter"
             android:icon="@drawable/ic_filter_list_white_24dp"
             android:label="@string/setting_filter"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
@@ -216,7 +224,8 @@
             android:name=".ServiceTileLockdown"
             android:icon="@drawable/ic_lock_outline_white_24dp"
             android:label="@string/setting_lockdown"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
@@ -224,14 +233,16 @@
 
         <receiver
             android:name=".ReceiverAutostart"
-            android:label="@string/app_name">
+            android:label="@string/app_name"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 
-        <receiver android:name=".ReceiverPackageRemoved">
+        <receiver android:name=".ReceiverPackageRemoved"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
                 <data android:scheme="package" />
@@ -240,7 +251,8 @@
 
         <receiver
             android:name=".WidgetMain"
-            android:label="@string/app_name">
+            android:label="@string/app_name"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -251,7 +263,8 @@
 
         <receiver
             android:name=".WidgetLockdown"
-            android:label="@string/setting_lockdown">
+            android:label="@string/setting_lockdown"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -263,7 +276,8 @@
         <receiver
             android:name=".WidgetAdmin"
             android:label="@string/app_name"
-            android:permission="eu.faircode.netguard.permission.ADMIN">
+            android:permission="eu.faircode.netguard.permission.ADMIN"
+            android:exported="true">
             <intent-filter>
                 <action android:name="eu.faircode.netguard.ON" />
                 <action android:name="eu.faircode.netguard.OFF" />

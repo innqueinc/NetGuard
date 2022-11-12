@@ -1,0 +1,12 @@
+# ninja log v5
+8	569	1668264089	CMakeFiles/netguard.dir/src/main/jni/netguard/icmp.c.o	cab00738d1948b4f
+2	601	1668264089	CMakeFiles/netguard.dir/src/main/jni/netguard/session.c.o	27e6d507826c43a3
+4	659	1668264089	CMakeFiles/netguard.dir/src/main/jni/netguard/ip.c.o	a3e2c55a1e4efedd
+7	671	1668264089	CMakeFiles/netguard.dir/src/main/jni/netguard/udp.c.o	451215eb6cc7e02a
+659	950	1668264089	CMakeFiles/netguard.dir/src/main/jni/netguard/pcap.c.o	25636204f5dae4fd
+601	960	1668264089	CMakeFiles/netguard.dir/src/main/jni/netguard/dhcp.c.o	36259cec175f86c8
+0	998	1668264090	CMakeFiles/netguard.dir/src/main/jni/netguard/netguard.c.o	fcc743f82adef53a
+672	1019	1668264090	CMakeFiles/netguard.dir/src/main/jni/netguard/util.c.o	600ec50cd4b193f3
+570	1020	1668264090	CMakeFiles/netguard.dir/src/main/jni/netguard/dns.c.o	c7ecbf679bf4cf66
+5	1065	1668264090	CMakeFiles/netguard.dir/src/main/jni/netguard/tcp.c.o	1ea566c7b4390bfe
+1065	1154	1668264090	../../../../build/intermediates/cmake/debug/obj/armeabi-v7a/libnetguard.so	34dc1e5aa6fecd7f

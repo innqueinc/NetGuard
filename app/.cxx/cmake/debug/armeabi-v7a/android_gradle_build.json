@@ -1,0 +1,40 @@
+{
+  "stringTable": {},
+  "buildFiles": [
+    "/Users/johncarlo/Desktop/Opensource/NetGuard-jni-context/app/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/johncarlo/Library/Android/sdk/cmake/3.10.2.4988404/bin/ninja",
+      "-C",
+      "/Users/johncarlo/Desktop/Opensource/NetGuard-jni-context/app/.cxx/cmake/debug/armeabi-v7a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/johncarlo/Library/Android/sdk/cmake/3.10.2.4988404/bin/ninja",
+    "-C",
+    "/Users/johncarlo/Desktop/Opensource/NetGuard-jni-context/app/.cxx/cmake/debug/armeabi-v7a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "netguard-Debug-armeabi-v7a": {
+      "buildCommandComponents": [
+        "/Users/johncarlo/Library/Android/sdk/cmake/3.10.2.4988404/bin/ninja",
+        "-C",
+        "/Users/johncarlo/Desktop/Opensource/NetGuard-jni-context/app/.cxx/cmake/debug/armeabi-v7a",
+        "netguard"
+      ],
+      "buildType": "debug",
+      "abi": "armeabi-v7a",
+      "artifactName": "netguard",
+      "output": "/Users/johncarlo/Desktop/Opensource/NetGuard-jni-context/app/build/intermediates/cmake/debug/obj/armeabi-v7a/libnetguard.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {},
+  "cFileExtensions": [
+    "c"
+  ],
+  "cppFileExtensions": []
+}
