@@ -136,8 +136,7 @@ public class Rule {
     }
 
     private static boolean isEnabled(PackageInfo info, Context context) {
-        if (!cacheEnabled.containsKey(info))
-            cacheEnabled.put(info, Util.isEnabled(info, context));
+        if (!cacheEnabled.containsKey(info)) cacheEnabled.put(info, Util.isEnabled(info, context));
         return cacheEnabled.get(info);
     }
 
@@ -151,8 +150,7 @@ public class Rule {
         if (!cacheIntentSettings.containsKey(packageName)) {
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
             intent.setData(Uri.parse("package:" + packageName));
-            if (intent.resolveActivity(context.getPackageManager()) == null)
-                intent = null;
+            if (intent.resolveActivity(context.getPackageManager()) == null) intent = null;
             cacheIntentSettings.put(packageName, intent);
         }
         return cacheIntentSettings.get(packageName);
@@ -161,16 +159,12 @@ public class Rule {
     private static Intent getIntentDatasaver(String packageName, Context context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             if (!cacheIntentDatasaver.containsKey(packageName)) {
-                Intent intent = new Intent(
-                        Settings.ACTION_IGNORE_BACKGROUND_DATA_RESTRICTIONS_SETTINGS,
-                        Uri.parse("package:" + packageName));
-                if (intent.resolveActivity(context.getPackageManager()) == null)
-                    intent = null;
+                Intent intent = new Intent(Settings.ACTION_IGNORE_BACKGROUND_DATA_RESTRICTIONS_SETTINGS, Uri.parse("package:" + packageName));
+                if (intent.resolveActivity(context.getPackageManager()) == null) intent = null;
                 cacheIntentDatasaver.put(packageName, intent);
             }
             return cacheIntentDatasaver.get(packageName);
-        } else
-            return null;
+        } else return null;
     }
 
     private static String[] getPackages(int uid, Context context) {
@@ -270,8 +264,7 @@ public class Rule {
                     dh.addApp(this.packageName, this.name, this.system, this.internet, this.enabled);
                 }
             } finally {
-                if (cursor != null)
-                    cursor.close();
+                if (cursor != null) cursor.close();
             }
         }
     }
@@ -287,24 +280,20 @@ public class Rule {
             SharedPreferences lockdown = context.getSharedPreferences("lockdown", Context.MODE_PRIVATE);
             SharedPreferences apply = context.getSharedPreferences("apply", Context.MODE_PRIVATE);
             SharedPreferences notify = context.getSharedPreferences("notify", Context.MODE_PRIVATE);
-
             // Get settings
             boolean default_wifi = prefs.getBoolean("whitelist_wifi", true);
             boolean default_other = prefs.getBoolean("whitelist_other", true);
             boolean default_screen_wifi = prefs.getBoolean("screen_wifi", false);
             boolean default_screen_other = prefs.getBoolean("screen_other", false);
             boolean default_roaming = prefs.getBoolean("whitelist_roaming", true);
-
             boolean manage_system = prefs.getBoolean("manage_system", false);
             boolean screen_on = prefs.getBoolean("screen_on", true);
             boolean show_user = prefs.getBoolean("show_user", true);
             boolean show_system = prefs.getBoolean("show_system", false);
-            boolean show_nointernet = prefs.getBoolean("show_nointernet", true);
-            boolean show_disabled = prefs.getBoolean("show_disabled", true);
-
+            boolean show_nointernet = prefs.getBoolean("show_nointernet", false);
+            boolean show_disabled = prefs.getBoolean("show_disabled", false);
             default_screen_wifi = default_screen_wifi && screen_on;
             default_screen_other = default_screen_other && screen_on;
-
             // Get predefined rules
             Map<String, Boolean> pre_wifi_blocked = new HashMap<>();
             Map<String, Boolean> pre_other_blocked = new HashMap<>();
@@ -315,29 +304,28 @@ public class Rule {
                 XmlResourceParser xml = context.getResources().getXml(R.xml.predefined);
                 int eventType = xml.getEventType();
                 while (eventType != XmlPullParser.END_DOCUMENT) {
-                    if (eventType == XmlPullParser.START_TAG)
-                        if ("wifi".equals(xml.getName())) {
-                            String pkg = xml.getAttributeValue(null, "package");
-                            boolean pblocked = xml.getAttributeBooleanValue(null, "blocked", false);
-                            pre_wifi_blocked.put(pkg, pblocked);
+                    if (eventType == XmlPullParser.START_TAG) if ("wifi".equals(xml.getName())) {
+                        String pkg = xml.getAttributeValue(null, "package");
+                        boolean pblocked = xml.getAttributeBooleanValue(null, "blocked", false);
+                        pre_wifi_blocked.put(pkg, pblocked);
 
-                        } else if ("other".equals(xml.getName())) {
-                            String pkg = xml.getAttributeValue(null, "package");
-                            boolean pblocked = xml.getAttributeBooleanValue(null, "blocked", false);
-                            boolean proaming = xml.getAttributeBooleanValue(null, "roaming", default_roaming);
-                            pre_other_blocked.put(pkg, pblocked);
-                            pre_roaming.put(pkg, proaming);
+                    } else if ("other".equals(xml.getName())) {
+                        String pkg = xml.getAttributeValue(null, "package");
+                        boolean pblocked = xml.getAttributeBooleanValue(null, "blocked", false);
+                        boolean proaming = xml.getAttributeBooleanValue(null, "roaming", default_roaming);
+                        pre_other_blocked.put(pkg, pblocked);
+                        pre_roaming.put(pkg, proaming);
 
-                        } else if ("relation".equals(xml.getName())) {
-                            String pkg = xml.getAttributeValue(null, "package");
-                            String[] rel = xml.getAttributeValue(null, "related").split(",");
-                            pre_related.put(pkg, rel);
+                    } else if ("relation".equals(xml.getName())) {
+                        String pkg = xml.getAttributeValue(null, "package");
+                        String[] rel = xml.getAttributeValue(null, "related").split(",");
+                        pre_related.put(pkg, rel);
 
-                        } else if ("type".equals(xml.getName())) {
-                            String pkg = xml.getAttributeValue(null, "package");
-                            boolean system = xml.getAttributeBooleanValue(null, "system", true);
-                            pre_system.put(pkg, system);
-                        }
+                    } else if ("type".equals(xml.getName())) {
+                        String pkg = xml.getAttributeValue(null, "package");
+                        boolean system = xml.getAttributeBooleanValue(null, "system", true);
+                        pre_system.put(pkg, system);
+                    }
 
 
                     eventType = xml.next();
@@ -359,7 +347,6 @@ public class Rule {
             root.applicationInfo.uid = 0;
             root.applicationInfo.icon = 0;
             listPI.add(root);
-
             // Add mediaserver
             PackageInfo media = new PackageInfo();
             media.packageName = "android.media";
@@ -369,7 +356,6 @@ public class Rule {
             media.applicationInfo.uid = 1013;
             media.applicationInfo.icon = 0;
             listPI.add(media);
-
             // Add GPS daemon
             PackageInfo gps = new PackageInfo();
             gps.packageName = "android.gps";
@@ -379,7 +365,6 @@ public class Rule {
             gps.applicationInfo.uid = 1021;
             gps.applicationInfo.icon = 0;
             listPI.add(gps);
-
             // Add nobody
             PackageInfo nobody = new PackageInfo();
             nobody.packageName = "nobody";
@@ -389,26 +374,16 @@ public class Rule {
             nobody.applicationInfo.uid = 9999;
             nobody.applicationInfo.icon = 0;
             listPI.add(nobody);
-
             DatabaseHelper dh = DatabaseHelper.getInstance(context);
             for (PackageInfo info : listPI)
                 try {
                     // Skip self
-                    if (info.applicationInfo.uid == Process.myUid())
-                        continue;
-
+                    if (info.applicationInfo.uid == Process.myUid()) continue;
                     Rule rule = new Rule(dh, info, context);
-
                     if (pre_system.containsKey(info.packageName))
                         rule.system = pre_system.get(info.packageName);
-                    if (info.applicationInfo.uid == Process.myUid())
-                        rule.system = true;
-
-                    if (all ||
-                            ((rule.system ? show_system : show_user) &&
-                                    (show_nointernet || rule.internet) &&
-                                    (show_disabled || rule.enabled))) {
-
+                    if (info.applicationInfo.uid == Process.myUid()) rule.system = true;
+                    if (all || ((rule.system ? show_system : show_user) && (show_nointernet || rule.internet) && (show_disabled || rule.enabled))) {
                         rule.wifi_default = (pre_wifi_blocked.containsKey(info.packageName) ? pre_wifi_blocked.get(info.packageName) : default_wifi);
                         rule.other_default = (pre_other_blocked.containsKey(info.packageName) ? pre_other_blocked.get(info.packageName) : default_other);
                         rule.screen_wifi_default = default_screen_wifi;
@@ -451,43 +426,28 @@ public class Rule {
             collator.setStrength(Collator.SECONDARY); // Case insensitive, process accents etc
 
             String sort = prefs.getString("sort", "name");
-            if ("uid".equals(sort))
-                Collections.sort(listRules, new Comparator<Rule>() {
-                    @Override
-                    public int compare(Rule rule, Rule other) {
-                        if (rule.uid < other.uid)
-                            return -1;
-                        else if (rule.uid > other.uid)
-                            return 1;
-                        else {
-                            int i = collator.compare(rule.name, other.name);
-                            return (i == 0 ? rule.packageName.compareTo(other.packageName) : i);
-                        }
-                    }
-                });
-            else
-                Collections.sort(listRules, new Comparator<Rule>() {
-                    @Override
-                    public int compare(Rule rule, Rule other) {
-                        if (all || rule.changed == other.changed) {
-                            int i = collator.compare(rule.name, other.name);
-                            return (i == 0 ? rule.packageName.compareTo(other.packageName) : i);
-                        }
-                        return (rule.changed ? -1 : 1);
-                    }
-                });
+            if ("uid".equals(sort)) Collections.sort(listRules, (rule, other12) -> {
+                if (rule.uid < other12.uid) return -1;
+                else if (rule.uid > other12.uid) return 1;
+                else {
+                    int i = collator.compare(rule.name, other12.name);
+                    return (i == 0 ? rule.packageName.compareTo(other12.packageName) : i);
+                }
+            });
+            else Collections.sort(listRules, (rule, other1) -> {
+                if (all || rule.changed == other1.changed) {
+                    int i = collator.compare(rule.name, other1.name);
+                    return (i == 0 ? rule.packageName.compareTo(other1.packageName) : i);
+                }
+                return (rule.changed ? -1 : 1);
+            });
 
             return listRules;
         }
     }
 
     private void updateChanged(boolean default_wifi, boolean default_other, boolean default_roaming) {
-        changed = (wifi_blocked != default_wifi ||
-                (other_blocked != default_other) ||
-                (wifi_blocked && screen_wifi != screen_wifi_default) ||
-                (other_blocked && screen_other != screen_other_default) ||
-                ((!other_blocked || screen_other) && roaming != default_roaming) ||
-                hosts > 0 || lockdown || !apply);
+        changed = (wifi_blocked != default_wifi || (other_blocked != default_other) || (wifi_blocked && screen_wifi != screen_wifi_default) || (other_blocked && screen_other != screen_other_default) || ((!other_blocked || screen_other) && roaming != default_roaming) || hosts > 0 || lockdown || !apply);
     }
 
     public void updateChanged(Context context) {
