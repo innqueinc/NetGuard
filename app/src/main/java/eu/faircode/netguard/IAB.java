@@ -16,7 +16,7 @@ package eu.faircode.netguard;
     You should have received a copy of the GNU General Public License
     along with NetGuard.  If not, see <http://www.gnu.org/licenses/>.
 
-    Copyright 2015-2016 by Marcel Bokhorst (M66B)
+    Copyright 2015-2017 by Marcel Bokhorst (M66B)
 */
 
 import android.app.PendingIntent;
@@ -28,6 +28,7 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.preference.PreferenceManager;
 import android.util.Log;
 
 import com.android.vending.billing.IInAppBillingService;
@@ -52,7 +53,7 @@ public class IAB implements ServiceConnection {
     }
 
     public IAB(Delegate delegate, Context context) {
-        this.context = context;
+        this.context = context.getApplicationContext();
         this.delegate = delegate;
     }
 
@@ -121,10 +122,12 @@ public class IAB implements ServiceConnection {
         SharedPreferences prefs = context.getSharedPreferences("IAB", Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
         for (String product : prefs.getAll().keySet())
-            if (!ActivityPro.SKU_DONATION.equals(product))
+            if (!ActivityPro.SKU_DONATION.equals(product)) {
+                Log.i(TAG, "removing SKU=" + product);
                 editor.remove(product);
+            }
         for (String sku : skus) {
-            Log.i(TAG, "SKU=" + sku);
+            Log.i(TAG, "adding SKU=" + sku);
             editor.putBoolean(sku, true);
         }
         editor.apply();
@@ -148,9 +151,11 @@ public class IAB implements ServiceConnection {
         return (details == null ? new ArrayList<String>() : details);
     }
 
-    public PendingIntent getBuyIntent(String sku) throws RemoteException {
-        Bundle bundle = service.getBuyIntent(IAB_VERSION, context.getPackageName(), sku, "inapp", "netguard");
-        Log.i(TAG, "getBuyIntent");
+    public PendingIntent getBuyIntent(String sku, boolean subscription) throws RemoteException {
+        if (service == null)
+            return null;
+        Bundle bundle = service.getBuyIntent(IAB_VERSION, context.getPackageName(), sku, subscription ? "subs" : "inapp", "netguard");
+        Log.i(TAG, "getBuyIntent sku=" + sku + " subscription=" + subscription);
         Util.logBundle(bundle);
         int response = (bundle == null ? -1 : bundle.getInt("RESPONSE_CODE", -1));
         Log.i(TAG, "Response=" + getResult(response));
@@ -168,12 +173,39 @@ public class IAB implements ServiceConnection {
     }
 
     public static boolean isPurchased(String sku, Context context) {
-        if (Util.getSelfVersionName(context).contains("beta"))
-            return true;
-        SharedPreferences prefs = context.getSharedPreferences("IAB", Context.MODE_PRIVATE);
-        return (prefs.getBoolean(sku, false) ||
-                prefs.getBoolean(ActivityPro.SKU_PRO1, false) ||
-                prefs.getBoolean(ActivityPro.SKU_DONATION, false));
+        try {
+            if (Util.isDebuggable(context)) {
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+                return !prefs.getBoolean("debug_iab", false);
+            }
+
+            SharedPreferences prefs = context.getSharedPreferences("IAB", Context.MODE_PRIVATE);
+            if (ActivityPro.SKU_SUPPORT1.equals(sku) || ActivityPro.SKU_SUPPORT2.equals(sku))
+                return prefs.getBoolean(sku, false);
+
+            return (prefs.getBoolean(sku, false) ||
+                    prefs.getBoolean(ActivityPro.SKU_PRO1, false) ||
+                    prefs.getBoolean(ActivityPro.SKU_DONATION, false));
+        } catch (SecurityException ignored) {
+            return false;
+        }
+    }
+
+    public static boolean isPurchasedAny(Context context) {
+        try {
+            if (Util.isDebuggable(context)) {
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+                return !(prefs.getBoolean("debug_iab", false) || prefs.getBoolean("debug_ads", false));
+            }
+
+            SharedPreferences prefs = context.getSharedPreferences("IAB", Context.MODE_PRIVATE);
+            for (String key : prefs.getAll().keySet())
+                if (prefs.getBoolean(key, false))
+                    return true;
+            return false;
+        } catch (SecurityException ignored) {
+            return false;
+        }
     }
 
     public static String getResult(int responseCode) {

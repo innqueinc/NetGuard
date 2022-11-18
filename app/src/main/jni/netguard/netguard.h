@@ -5,15 +5,23 @@
 #include <time.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <setjmp.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <dirent.h>
+#include <poll.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
 #include <dlfcn.h>
+#include <sys/stat.h>
+#include <sys/resource.h>
 
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/in6.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/udp.h>
@@ -22,16 +30,16 @@
 #include <netinet/icmp6.h>
 
 #include <android/log.h>
+#include <sys/system_properties.h>
 
 #define TAG "NetGuard.JNI"
 
-// #define PROFILE_EVENTS 5
-// #define PROFILE_UID 5
 // #define PROFILE_JNI 5
 
-#define SELECT_TIMEOUT 600 // seconds
+#define EPOLL_TIMEOUT 3600 // seconds
+#define EPOLL_EVENTS 20
+#define EPOLL_MIN_CHECK 100 // milliseconds
 
-#define TUN_MAXMSG 32768 // bytes (device)
 #define ICMP4_MAXMSG (IP_MAXPACKET - 20 - 8) // bytes (socket)
 #define ICMP6_MAXMSG (IPV6_MAXPACKET - 40 - 8) // bytes (socket)
 #define UDP4_MAXMSG (IP_MAXPACKET - 20 - 8) // bytes (socket)
@@ -42,31 +50,40 @@
 #define UDP_TIMEOUT_53 15 // seconds
 #define UDP_TIMEOUT_ANY 300 // seconds
 #define UDP_KEEP_TIMEOUT 60 // seconds
-#define UDP_TIMEOUT_SCALE 25
 
-#define TCP_RECV_WINDOW 16384 // bytes (maximum)
-#define TCP_SEND_WINDOW 16384 // bytes (maximum)
 #define TCP_INIT_TIMEOUT 30 // seconds ~net.inet.tcp.keepinit
-#define TCP_IDLE_TIMEOUT 300 // seconds ~net.inet.tcp.keepidle
+#define TCP_IDLE_TIMEOUT 3600 // seconds ~net.inet.tcp.keepidle
 #define TCP_CLOSE_TIMEOUT 30 // seconds
 #define TCP_KEEP_TIMEOUT 300 // seconds
-#define TCP_TIMEOUT_SCALE 50
 // https://en.wikipedia.org/wiki/Maximum_segment_lifetime
 
-#define UID_DELAY 1 // milliseconds
-#define UID_DELAYTRY 10 // milliseconds
-#define UID_MAXTRY 3
+#define SESSION_MAX 512 // number
+#define SESSION_LIMIT 30 // percent
 
-#define MAX_PCAP_FILE (1024 * 1024) // bytes
-#define MAX_PCAP_RECORD 128 // bytes
+#define UID_MAX_AGE 30000 // milliseconds
 
-#define RTLD_NOLOAD 4
+#define SOCKS5_NONE 1
+#define SOCKS5_HELLO 2
+#define SOCKS5_AUTH 3
+#define SOCKS5_CONNECT 4
+#define SOCKS5_CONNECTED 5
+
+struct context {
+    pthread_mutex_t lock;
+    int pipefds[2];
+    int stopping;
+    int tun;
+    struct ng_session *ng_session;
+};
 
 struct arguments {
     JNIEnv *env;
     jobject instance;
+    int sdk;
     int tun;
     jboolean fwd53;
+    jint rcode;
+    struct context *ctx;
 };
 
 struct allowed {
@@ -77,6 +94,7 @@ struct allowed {
 struct segment {
     uint32_t seq;
     uint16_t len;
+    uint16_t sent;
     int psh;
     uint8_t *data;
     struct segment *next;
@@ -100,9 +118,6 @@ struct icmp_session {
     uint16_t id;
 
     uint8_t stop;
-    jint socket;
-
-    struct icmp_session *next;
 };
 
 #define UDP_ACTIVE 0
@@ -114,6 +129,10 @@ struct udp_session {
     time_t time;
     jint uid;
     int version;
+    uint16_t mss;
+
+    uint64_t sent;
+    uint64_t received;
 
     union {
         __be32 ip4; // network notation
@@ -128,22 +147,28 @@ struct udp_session {
     __be16 dest; // network notation
 
     uint8_t state;
-    jint socket;
-
-    struct udp_session *next;
 };
 
 struct tcp_session {
     jint uid;
     time_t time;
     int version;
-    uint16_t recv_window; // host notation
-    uint16_t send_window; // host notation
+    uint16_t mss;
+    uint8_t recv_scale;
+    uint8_t send_scale;
+    uint32_t recv_window; // host notation, scaled
+    uint32_t send_window; // host notation, scaled
 
     uint32_t remote_seq; // confirmed bytes received, host notation
     uint32_t local_seq; // confirmed bytes sent, host notation
     uint32_t remote_start;
     uint32_t local_start;
+
+    uint32_t acked; // host notation
+    long long last_keep_alive;
+
+    uint64_t sent;
+    uint64_t received;
 
     union {
         __be32 ip4; // network notation
@@ -158,10 +183,31 @@ struct tcp_session {
     __be16 dest; // network notation
 
     uint8_t state;
-    jint socket;
+    uint8_t socks5;
     struct segment *forward;
+};
 
-    struct tcp_session *next;
+struct ng_session {
+    uint8_t protocol;
+    union {
+        struct icmp_session icmp;
+        struct udp_session udp;
+        struct tcp_session tcp;
+    };
+    jint socket;
+    struct epoll_event ev;
+    struct ng_session *next;
+};
+
+struct uid_cache_entry {
+    uint8_t version;
+    uint8_t protocol;
+    uint8_t saddr[16];
+    uint16_t sport;
+    uint8_t daddr[16];
+    uint16_t dport;
+    jint uid;
+    long time;
 };
 
 // IPv6
@@ -189,14 +235,14 @@ typedef struct pcap_hdr_s {
     guint32_t sigfigs;
     guint32_t snaplen;
     guint32_t network;
-} __packed;
+} __packed pcap_hdr_s;
 
 typedef struct pcaprec_hdr_s {
     guint32_t ts_sec;
     guint32_t ts_usec;
     guint32_t incl_len;
     guint32_t orig_len;
-} __packed;
+} __packed pcaprec_hdr_s;
 
 #define LINKTYPE_RAW 101
 
@@ -206,7 +252,7 @@ typedef struct pcaprec_hdr_s {
 #define DNS_QTYPE_A 1 // IPv4
 #define DNS_QTYPE_AAAA 28 // IPv6
 
-#define DNS_QNAME_MAX 63
+#define DNS_QNAME_MAX 255
 #define DNS_TTL (10 * 60) // seconds
 
 struct dns_header {
@@ -248,7 +294,7 @@ typedef struct dns_rr {
     __be16 qclass;
     __be32 ttl;
     __be16 rdlength;
-} __packed;
+} __packed dns_rr;
 
 // DHCP
 
@@ -270,18 +316,14 @@ typedef struct dhcp_packet {
     uint8_t sname[64];
     uint8_t file[128];
     uint32_t option_format;
-} __packed;
+} __packed dhcp_packet;
 
 typedef struct dhcp_option {
     uint8_t code;
     uint8_t length;
-} __packed;
+} __packed dhcp_option;
 
 // Prototypes
-
-void clear_sessions();
-
-void clear_tcp_data(struct tcp_session *cur);
 
 void handle_signal(int sig, siginfo_t *info, void *context);
 
@@ -289,44 +331,74 @@ void *handle_events(void *a);
 
 void report_exit(const struct arguments *args, const char *fmt, ...);
 
+void report_error(const struct arguments *args, jint error, const char *fmt, ...);
+
 void check_allowed(const struct arguments *args);
 
-int check_icmp_sessions(const struct arguments *args);
+void clear(struct context *ctx);
 
-int check_udp_sessions(const struct arguments *args);
+int check_icmp_session(const struct arguments *args,
+                       struct ng_session *s,
+                       int sessions, int maxsessions);
 
-int check_tcp_sessions(const struct arguments *args);
+int check_udp_session(const struct arguments *args,
+                      struct ng_session *s,
+                      int sessions, int maxsessions);
 
-int get_select_timeout(int isessions, int usessions, int tsessions);
+int check_tcp_session(const struct arguments *args,
+                      struct ng_session *s,
+                      int sessions, int maxsessions);
 
-int get_udp_timeout(const struct udp_session *u, int sessions);
+int monitor_tcp_session(const struct arguments *args, struct ng_session *s, int epoll_fd);
 
-int get_tcp_timeout(const struct tcp_session *t, int sessions);
+int get_icmp_timeout(const struct icmp_session *u, int sessions, int maxsessions);
 
-int get_selects(const struct arguments *args, fd_set *rfds, fd_set *wfds, fd_set *efds);
+int get_udp_timeout(const struct udp_session *u, int sessions, int maxsessions);
 
-int check_tun(const struct arguments *args, fd_set *rfds, fd_set *wfds, fd_set *efds);
+int get_tcp_timeout(const struct tcp_session *t, int sessions, int maxsessions);
 
-void check_icmp_sockets(const struct arguments *args, fd_set *rfds, fd_set *wfds, fd_set *efds);
+uint16_t get_mtu();
 
-void check_udp_sockets(const struct arguments *args, fd_set *rfds, fd_set *wfds, fd_set *efds);
+uint16_t get_default_mss(int version);
+
+int check_tun(const struct arguments *args,
+              const struct epoll_event *ev,
+              const int epoll_fd,
+              int sessions, int maxsessions);
+
+void check_icmp_socket(const struct arguments *args, const struct epoll_event *ev);
+
+void check_udp_socket(const struct arguments *args, const struct epoll_event *ev);
 
 int32_t get_qname(const uint8_t *data, const size_t datalen, uint16_t off, char *qname);
 
-void parse_dns_response(const struct arguments *args, const uint8_t *data, const size_t datalen);
+void parse_dns_response(const struct arguments *args, const struct udp_session *u,
+                        const uint8_t *data, size_t *datalen);
 
-void check_tcp_sockets(const struct arguments *args, fd_set *rfds, fd_set *wfds, fd_set *efds);
+uint32_t get_send_window(const struct tcp_session *cur);
+
+int get_receive_buffer(const struct ng_session *cur);
+
+uint32_t get_receive_window(const struct ng_session *cur);
+
+void check_tcp_socket(const struct arguments *args,
+                      const struct epoll_event *ev,
+                      const int epoll_fd);
 
 int is_lower_layer(int protocol);
 
 int is_upper_layer(int protocol);
 
-void handle_ip(const struct arguments *args, const uint8_t *buffer, size_t length);
+void handle_ip(const struct arguments *args,
+               const uint8_t *buffer, size_t length,
+               const int epoll_fd,
+               int sessions, int maxsessions);
 
 jboolean handle_icmp(const struct arguments *args,
                      const uint8_t *pkt, size_t length,
                      const uint8_t *payload,
-                     int uid);
+                     int uid,
+                     const int epoll_fd);
 
 int has_udp_session(const struct arguments *args, const uint8_t *pkt, const uint8_t *payload);
 
@@ -338,7 +410,8 @@ void block_udp(const struct arguments *args,
 jboolean handle_udp(const struct arguments *args,
                     const uint8_t *pkt, size_t length,
                     const uint8_t *payload,
-                    int uid, struct allowed *redirect);
+                    int uid, struct allowed *redirect,
+                    const int epoll_fd);
 
 int get_dns_query(const struct arguments *args, const struct udp_session *u,
                   const uint8_t *data, const size_t datalen,
@@ -351,10 +424,13 @@ int check_domain(const struct arguments *args, const struct udp_session *u,
 int check_dhcp(const struct arguments *args, const struct udp_session *u,
                const uint8_t *data, const size_t datalen);
 
+void clear_tcp_data(struct tcp_session *cur);
+
 jboolean handle_tcp(const struct arguments *args,
                     const uint8_t *pkt, size_t length,
                     const uint8_t *payload,
-                    int uid, struct allowed *redirect);
+                    int uid, int allowed, struct allowed *redirect,
+                    const int epoll_fd);
 
 void queue_tcp(const struct arguments *args,
                const struct tcphdr *tcphdr,
@@ -363,7 +439,8 @@ void queue_tcp(const struct arguments *args,
 
 int open_icmp_socket(const struct arguments *args, const struct icmp_session *cur);
 
-int open_udp_socket(const struct arguments *args, const struct udp_session *cur);
+int open_udp_socket(const struct arguments *args,
+                    const struct udp_session *cur, const struct allowed *redirect);
 
 int open_tcp_socket(const struct arguments *args,
                     const struct tcp_session *cur, const struct allowed *redirect);
@@ -372,7 +449,7 @@ int32_t get_local_port(const int sock);
 
 int write_syn_ack(const struct arguments *args, struct tcp_session *cur);
 
-int write_ack(const struct arguments *args, struct tcp_session *cur, size_t bytes);
+int write_ack(const struct arguments *args, struct tcp_session *cur);
 
 int write_data(const struct arguments *args, struct tcp_session *cur,
                const uint8_t *buffer, size_t length);
@@ -381,6 +458,8 @@ int write_fin_ack(const struct arguments *args, struct tcp_session *cur);
 
 void write_rst(const struct arguments *args, struct tcp_session *cur);
 
+void write_rst_ack(const struct arguments *args, struct tcp_session *cur);
+
 ssize_t write_icmp(const struct arguments *args, const struct icmp_session *cur,
                    uint8_t *data, size_t datalen);
 
@@ -388,15 +467,22 @@ ssize_t write_udp(const struct arguments *args, const struct udp_session *cur,
                   uint8_t *data, size_t datalen);
 
 ssize_t write_tcp(const struct arguments *args, const struct tcp_session *cur,
-                  const uint8_t *data, size_t datalen, size_t confirm,
+                  const uint8_t *data, size_t datalen,
                   int syn, int ack, int fin, int rst);
 
 uint8_t char2nible(const char c);
 
 void hex2bytes(const char *hex, uint8_t *buffer);
 
-jint get_uid(const int protocol, const int version,
-             const void *saddr, const uint16_t sport, int dump);
+jint get_uid(const int version, const int protocol,
+             const void *saddr, const uint16_t sport,
+             const void *daddr, const uint16_t dport);
+
+jint get_uid_sub(const int version, const int protocol,
+                 const void *saddr, const uint16_t sport,
+                 const void *daddr, const uint16_t dport,
+                 const char *source, const char *dest,
+                 long now);
 
 int protect_socket(const struct arguments *args, int socket);
 
@@ -415,8 +501,6 @@ jobject jniNewObject(JNIEnv *env, jclass cls, jmethodID constructor, const char 
 int jniCheckException(JNIEnv *env);
 
 int sdk_int(JNIEnv *env);
-
-int __system_property_get(JNIEnv *env, const char *name, char *value);
 
 void log_android(int prio, const char *fmt, ...);
 
@@ -441,14 +525,23 @@ jobject create_packet(const struct arguments *args,
                       jint uid,
                       jboolean allowed);
 
+void account_usage(const struct arguments *args, jint version, jint protocol,
+                   const char *daddr, jint dport, jint uid, jlong sent, jlong received);
+
 void write_pcap_hdr();
 
 void write_pcap_rec(const uint8_t *buffer, size_t len);
 
 void write_pcap(const void *ptr, size_t len);
 
-int compare_u16(uint32_t seq1, uint32_t seq2);
+int compare_u32(uint32_t seq1, uint32_t seq2);
 
 const char *strstate(const int state);
 
 char *hex(const u_int8_t *data, const size_t len);
+
+int is_readable(int fd);
+
+int is_writable(int fd);
+
+long long get_ms();

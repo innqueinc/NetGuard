@@ -10,6 +10,14 @@
 
     <wifi
         blocked="false"
+        package="eu.faircode.netguard" />
+    <other
+        blocked="false"
+        package="eu.faircode.netguard"
+        roaming="false" />
+
+    <wifi
+        blocked="false"
         package="com.google.android.apps.adm" />
     <other
         blocked="false"
@@ -19,6 +27,16 @@
     <wifi
         blocked="false"
         package="com.google.android.backuptransport" />
+    <other
+        blocked="false"
+        package="com.google.android.backuptransport" />
+
+    <wifi
+        blocked="false"
+        package="com.google.android.gms" />
+    <other
+        blocked="false"
+        package="com.google.android.gms" />
 
     <wifi
         blocked="false"
@@ -36,6 +54,9 @@
         related="com.android.providers.downloads" />
 
     <type
+        package="com.android.chrome"
+        system="false" />
+    <type
         package="com.facebook.katana"
         system="false" />
     <type
@@ -52,5 +73,14 @@
         system="false" />
     <type
         package="com.whatsapp"
+        system="false" />
+    <type
+        package="com.instagram.android"
+        system="false" />
+    <type
+        package="com.facebook.orca"
+        system="false" />
+    <type
+        package="com.google.android.youtube"
         system="false" />
 </predefined>

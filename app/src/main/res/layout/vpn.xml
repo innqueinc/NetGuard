@@ -14,7 +14,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_vertical"
-            android:src="@mipmap/ic_launcher" />
+            android:src="@drawable/ic_security_color_24dp" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -23,14 +23,13 @@
             android:layout_marginLeft="8dp"
             android:layout_marginStart="8dp"
             android:text="@string/app_name"
-            android:textAppearance="@style/TextLarge"
             android:textStyle="bold" />
     </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="16dp"
         android:orientation="vertical">
 
         <LinearLayout
@@ -41,15 +40,13 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/msg_vpn"
-                android:textAppearance="@style/TextMedium" />
+                android:text="@string/msg_vpn" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="@string/msg_dimming"
-                android:textAppearance="@style/TextSmall"
                 android:textStyle="italic" />
         </LinearLayout>
     </ScrollView>

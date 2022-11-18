@@ -16,7 +16,7 @@ package eu.faircode.netguard;
     You should have received a copy of the GNU General Public License
     along with NetGuard.  If not, see <http://www.gnu.org/licenses/>.
 
-    Copyright 2015-2016 by Marcel Bokhorst (M66B)
+    Copyright 2015-2017 by Marcel Bokhorst (M66B)
 */
 
 public class Packet {
@@ -24,9 +24,9 @@ public class Packet {
     public int version;
     public int protocol;
     public String flags;
-    public String saddr; // TODO byte[]
+    public String saddr;
     public int sport;
-    public String daddr; // TODO byte[]
+    public String daddr;
     public int dport;
     public String data;
     public int uid;

@@ -14,7 +14,7 @@
     You should have received a copy of the GNU General Public License
     along with NetGuard.  If not, see <http://www.gnu.org/licenses/>.
 
-    Copyright 2015-2016 by Marcel Bokhorst (M66B)
+    Copyright 2015-2017 by Marcel Bokhorst (M66B)
 */
 
 #include "netguard.h"
@@ -40,7 +40,7 @@ uint16_t calc_checksum(uint16_t start, const uint8_t *buffer, size_t length) {
     return (uint16_t) sum;
 }
 
-int compare_u16(uint32_t s1, uint32_t s2) {
+int compare_u32(uint32_t s1, uint32_t s2) {
     // https://tools.ietf.org/html/rfc1982
     if (s1 == s2)
         return 0;
@@ -60,31 +60,13 @@ int sdk_int(JNIEnv *env) {
     return (*env)->GetStaticIntField(env, clsVersion, fid);
 }
 
-typedef int (*PFN_SYS_PROP_GET)(const char *, char *);
-
-int __system_property_get(JNIEnv *env, const char *name, char *value) {
-    static PFN_SYS_PROP_GET __real_system_property_get = NULL;
-    if (!__real_system_property_get) {
-        void *handle = dlopen("libc.so", sdk_int(env) >= 21 ? RTLD_NOLOAD : 0);
-        if (!handle)
-            log_android(ANDROID_LOG_ERROR, "dlopen(libc.so): %s", dlerror());
-        else {
-            __real_system_property_get = (PFN_SYS_PROP_GET) dlsym(
-                    handle, "__system_property_get");
-            if (!__real_system_property_get)
-                log_android(ANDROID_LOG_ERROR, "dlsym(__system_property_get()): %s", dlerror());
-        }
-    }
-    return (*__real_system_property_get)(name, value);
-}
-
 void log_android(int prio, const char *fmt, ...) {
     if (prio >= loglevel) {
         char line[1024];
         va_list argptr;
         va_start(argptr, fmt);
         vsprintf(line, fmt, argptr);
-        __android_log_print(prio, TAG, line);
+        __android_log_print(prio, TAG, "%s", line);
         va_end(argptr);
     }
 }
@@ -170,3 +152,31 @@ int32_t get_local_port(const int sock) {
         return ntohs(sin.sin_port);
 }
 
+int is_event(int fd, short event) {
+    struct pollfd p;
+    p.fd = fd;
+    p.events = event;
+    p.revents = 0;
+    int r = poll(&p, 1, 0);
+    if (r < 0) {
+        log_android(ANDROID_LOG_ERROR, "poll readable error %d: %s", errno, strerror(errno));
+        return 0;
+    } else if (r == 0)
+        return 0;
+    else
+        return (p.revents & event);
+}
+
+int is_readable(int fd) {
+    return is_event(fd, POLLIN);
+}
+
+int is_writable(int fd) {
+    return is_event(fd, POLLOUT);
+}
+
+long long get_ms() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000LL + ts.tv_nsec / 1e6;
+}

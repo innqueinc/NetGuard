@@ -16,11 +16,12 @@ package eu.faircode.netguard;
     You should have received a copy of the GNU General Public License
     along with NetGuard.  If not, see <http://www.gnu.org/licenses/>.
 
-    Copyright 2015-2016 by Marcel Bokhorst (M66B)
+    Copyright 2015-2017 by Marcel Bokhorst (M66B)
 */
 
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteDoneException;
@@ -28,30 +29,40 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Message;
+import android.preference.PreferenceManager;
 import android.util.Log;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String TAG = "NetGuard.Database";
 
     private static final String DB_NAME = "Netguard";
-    private static final int DB_VERSION = 16;
+    private static final int DB_VERSION = 21;
 
     private static boolean once = true;
     private static List<LogChangedListener> logChangedListeners = new ArrayList<>();
     private static List<AccessChangedListener> accessChangedListeners = new ArrayList<>();
+    private static List<ForwardChangedListener> forwardChangedListeners = new ArrayList<>();
 
-    private Context context;
     private static HandlerThread hthread = null;
     private static Handler handler = null;
 
+    private static final Map<Integer, Long> mapUidHosts = new HashMap<>();
+
     private final static int MSG_LOG = 1;
     private final static int MSG_ACCESS = 2;
+    private final static int MSG_FORWARD = 3;
+
+    private SharedPreferences prefs;
+    private ReentrantReadWriteLock lock = new ReentrantReadWriteLock(true);
 
     static {
         hthread = new HandlerThread("DatabaseHelper");
@@ -64,9 +75,28 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         };
     }
 
-    public DatabaseHelper(Context context) {
+    private static DatabaseHelper dh = null;
+
+    public static DatabaseHelper getInstance(Context context) {
+        if (dh == null)
+            dh = new DatabaseHelper(context.getApplicationContext());
+        return dh;
+    }
+
+    public static void clearCache() {
+        synchronized (mapUidHosts) {
+            mapUidHosts.clear();
+        }
+    }
+
+    @Override
+    public void close() {
+        Log.w(TAG, "Database is being closed");
+    }
+
+    private DatabaseHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
-        this.context = context;
+        prefs = PreferenceManager.getDefaultSharedPreferences(context);
 
         if (!once) {
             once = true;
@@ -92,11 +122,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         createTableAccess(db);
         createTableDns(db);
         createTableForward(db);
+        createTableApp(db);
     }
 
     @Override
     public void onConfigure(SQLiteDatabase db) {
-        //db.enableWriteAheadLogging();
+        db.enableWriteAheadLogging();
         super.onConfigure(db);
     }
 
@@ -121,12 +152,11 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 ");");
         db.execSQL("CREATE INDEX idx_log_time ON log(time)");
         db.execSQL("CREATE INDEX idx_log_dest ON log(daddr)");
-        db.execSQL("CREATE INDEX idx_log_dport ON log(dport)");
         db.execSQL("CREATE INDEX idx_log_dname ON log(dname)");
+        db.execSQL("CREATE INDEX idx_log_dport ON log(dport)");
         db.execSQL("CREATE INDEX idx_log_uid ON log(uid)");
     }
 
-    // TODO add version, protocol
     private void createTableAccess(SQLiteDatabase db) {
         Log.i(TAG, "Creating access table");
         db.execSQL("CREATE TABLE access (" +
@@ -139,8 +169,13 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 ", time INTEGER NOT NULL" +
                 ", allowed INTEGER NULL" +
                 ", block INTEGER NOT NULL" +
+                ", sent INTEGER NULL" +
+                ", received INTEGER NULL" +
+                ", connections INTEGER NULL" +
                 ");");
         db.execSQL("CREATE UNIQUE INDEX idx_access ON access(uid, version, protocol, daddr, dport)");
+        db.execSQL("CREATE INDEX idx_access_daddr ON access(daddr)");
+        db.execSQL("CREATE INDEX idx_access_block ON access(block)");
     }
 
     private void createTableDns(SQLiteDatabase db) {
@@ -153,7 +188,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 ", resource TEXT NOT NULL" +
                 ", ttl INTEGER NULL" +
                 ");");
-        db.execSQL("CREATE INDEX idx_dns ON dns(qname, aname, resource)");
+        db.execSQL("CREATE UNIQUE INDEX idx_dns ON dns(qname, aname, resource)");
+        db.execSQL("CREATE INDEX idx_dns_resource ON dns(resource)");
     }
 
     private void createTableForward(SQLiteDatabase db) {
@@ -167,6 +203,19 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 ", ruid INTEGER NOT NULL" +
                 ");");
         db.execSQL("CREATE UNIQUE INDEX idx_forward ON forward(protocol, dport)");
+    }
+
+    private void createTableApp(SQLiteDatabase db) {
+        Log.i(TAG, "Creating app table");
+        db.execSQL("CREATE TABLE app (" +
+                " ID INTEGER PRIMARY KEY AUTOINCREMENT" +
+                ", package TEXT" +
+                ", label TEXT" +
+                ", system INTEGER  NOT NULL" +
+                ", internet INTEGER NOT NULL" +
+                ", enabled INTEGER NOT NULL" +
+                ");");
+        db.execSQL("CREATE UNIQUE INDEX idx_package ON app(package)");
     }
 
     private boolean columnExists(SQLiteDatabase db, String table, String column) {
@@ -269,11 +318,38 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 createTableForward(db);
                 oldVersion = 16;
             }
+            if (oldVersion < 17) {
+                if (!columnExists(db, "access", "sent"))
+                    db.execSQL("ALTER TABLE access ADD COLUMN sent INTEGER NULL");
+                if (!columnExists(db, "access", "received"))
+                    db.execSQL("ALTER TABLE access ADD COLUMN received INTEGER NULL");
+                oldVersion = 17;
+            }
+            if (oldVersion < 18) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_access_block ON access(block)");
+                db.execSQL("DROP INDEX idx_dns");
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_dns ON dns(qname, aname, resource)");
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_dns_resource ON dns(resource)");
+                oldVersion = 18;
+            }
+            if (oldVersion < 19) {
+                if (!columnExists(db, "access", "connections"))
+                    db.execSQL("ALTER TABLE access ADD COLUMN connections INTEGER NULL");
+                oldVersion = 19;
+            }
+            if (oldVersion < 20) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_access_daddr ON access(daddr)");
+                oldVersion = 20;
+            }
+            if (oldVersion < 21) {
+                createTableApp(db);
+                oldVersion = 21;
+            }
 
             if (oldVersion == DB_VERSION) {
                 db.setVersion(oldVersion);
                 db.setTransactionSuccessful();
-                Log.e(TAG, DB_NAME + " upgraded to " + DB_VERSION);
+                Log.i(TAG, DB_NAME + " upgraded to " + DB_VERSION);
             } else
                 throw new IllegalArgumentException(DB_NAME + " upgraded to " + oldVersion + " but required " + DB_VERSION);
 
@@ -286,303 +362,713 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     // Log
 
-    public DatabaseHelper insertLog(Packet packet, String dname, int connection, boolean interactive) {
-        synchronized (context.getApplicationContext()) {
+    public void insertLog(Packet packet, String dname, int connection, boolean interactive) {
+        lock.writeLock().lock();
+        try {
             SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                ContentValues cv = new ContentValues();
+                cv.put("time", packet.time);
+                cv.put("version", packet.version);
 
-            ContentValues cv = new ContentValues();
-            cv.put("time", packet.time);
-            cv.put("version", packet.version);
+                if (packet.protocol < 0)
+                    cv.putNull("protocol");
+                else
+                    cv.put("protocol", packet.protocol);
 
-            if (packet.protocol < 0)
-                cv.putNull("protocol");
-            else
-                cv.put("protocol", packet.protocol);
+                cv.put("flags", packet.flags);
 
-            cv.put("flags", packet.flags);
+                cv.put("saddr", packet.saddr);
+                if (packet.sport < 0)
+                    cv.putNull("sport");
+                else
+                    cv.put("sport", packet.sport);
 
-            cv.put("saddr", packet.saddr);
-            if (packet.sport < 0)
-                cv.putNull("sport");
-            else
-                cv.put("sport", packet.sport);
+                cv.put("daddr", packet.daddr);
+                if (packet.dport < 0)
+                    cv.putNull("dport");
+                else
+                    cv.put("dport", packet.dport);
 
-            cv.put("daddr", packet.daddr);
-            if (packet.dport < 0)
-                cv.putNull("dport");
-            else
-                cv.put("dport", packet.dport);
+                if (dname == null)
+                    cv.putNull("dname");
+                else
+                    cv.put("dname", dname);
 
-            if (dname == null)
-                cv.putNull("dname");
-            else
-                cv.put("dname", dname);
+                cv.put("data", packet.data);
 
-            cv.put("data", packet.data);
+                if (packet.uid < 0)
+                    cv.putNull("uid");
+                else
+                    cv.put("uid", packet.uid);
 
-            if (packet.uid < 0)
-                cv.putNull("uid");
-            else
-                cv.put("uid", packet.uid);
+                cv.put("allowed", packet.allowed ? 1 : 0);
 
-            cv.put("allowed", packet.allowed ? 1 : 0);
+                cv.put("connection", connection);
+                cv.put("interactive", interactive ? 1 : 0);
 
-            cv.put("connection", connection);
-            cv.put("interactive", interactive ? 1 : 0);
+                if (db.insert("log", null, cv) == -1)
+                    Log.e(TAG, "Insert log failed");
 
-            if (db.insert("log", null, cv) == -1)
-                Log.e(TAG, "Insert log failed");
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
 
         notifyLogChanged();
-        return this;
     }
 
-    public DatabaseHelper clearLog() {
-        synchronized (context.getApplicationContext()) {
-            SQLiteDatabase db = this.getReadableDatabase();
-            db.delete("log", null, new String[]{});
+    public void clearLog(int uid) {
+        lock.writeLock().lock();
+        try {
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                if (uid < 0)
+                    db.delete("log", null, new String[]{});
+                else
+                    db.delete("log", "uid = ?", new String[]{Integer.toString(uid)});
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+
             db.execSQL("VACUUM");
+        } finally {
+            lock.writeLock().unlock();
         }
 
         notifyLogChanged();
-        return this;
+    }
+
+    public void cleanupLog(long time) {
+        lock.writeLock().lock();
+        try {
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                // There an index on time
+                int rows = db.delete("log", "time < ?", new String[]{Long.toString(time)});
+                Log.i(TAG, "Cleanup log" +
+                        " before=" + SimpleDateFormat.getDateTimeInstance().format(new Date(time)) +
+                        " rows=" + rows);
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     public Cursor getLog(boolean udp, boolean tcp, boolean other, boolean allowed, boolean blocked) {
-        // There is no index on protocol/allowed for write performance
-        SQLiteDatabase db = this.getReadableDatabase();
-        String query = "SELECT ID AS _id, *";
-        query += " FROM log";
-        query += " WHERE (0 = 1";
-        if (udp)
-            query += " OR protocol = 17";
-        if (tcp)
-            query += " OR protocol = 6";
-        if (other)
-            query += " OR (protocol <> 6 AND protocol <> 17)";
-        query += ") AND (0 = 1";
-        if (allowed)
-            query += " OR allowed = 1";
-        if (blocked)
-            query += " OR allowed = 0";
-        query += ")";
-        query += " ORDER BY time DESC";
-        return db.rawQuery(query, new String[]{});
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
+            // There is an index on time
+            // There is no index on protocol/allowed for write performance
+            String query = "SELECT ID AS _id, *";
+            query += " FROM log";
+            query += " WHERE (0 = 1";
+            if (udp)
+                query += " OR protocol = 17";
+            if (tcp)
+                query += " OR protocol = 6";
+            if (other)
+                query += " OR (protocol <> 6 AND protocol <> 17)";
+            query += ") AND (0 = 1";
+            if (allowed)
+                query += " OR allowed = 1";
+            if (blocked)
+                query += " OR allowed = 0";
+            query += ")";
+            query += " ORDER BY time DESC";
+            return db.rawQuery(query, new String[]{});
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     public Cursor searchLog(String find) {
-        SQLiteDatabase db = this.getReadableDatabase();
-        String query = "SELECT ID AS _id, *";
-        query += " FROM log";
-        query += " WHERE daddr LIKE ? OR dname LIKE ? OR dport = ? OR uid LIKE ?";
-        query += " ORDER BY time DESC";
-        return db.rawQuery(query, new String[]{"%" + find + "%", "%" + find + "%", find, "%" + find + "%"});
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
+            // There is an index on daddr, dname, dport and uid
+            String query = "SELECT ID AS _id, *";
+            query += " FROM log";
+            query += " WHERE daddr LIKE ? OR dname LIKE ? OR dport = ? OR uid = ?";
+            query += " ORDER BY time DESC";
+            return db.rawQuery(query, new String[]{"%" + find + "%", "%" + find + "%", find, find});
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     // Access
 
     public boolean updateAccess(Packet packet, String dname, int block) {
         int rows;
-        synchronized (context.getApplicationContext()) {
+
+        lock.writeLock().lock();
+        try {
             SQLiteDatabase db = this.getWritableDatabase();
-
-            ContentValues cv = new ContentValues();
-            cv.put("time", packet.time);
-            cv.put("allowed", packet.allowed ? 1 : 0);
-            if (block >= 0)
-                cv.put("block", block);
-
-            rows = db.update("access", cv, "uid = ? AND version = ? AND protocol = ? AND daddr = ? AND dport = ?",
-                    new String[]{
-                            Integer.toString(packet.uid),
-                            Integer.toString(packet.version),
-                            Integer.toString(packet.protocol),
-                            dname == null ? packet.daddr : dname,
-                            Integer.toString(packet.dport)});
-
-            if (rows == 0) {
-                cv.put("uid", packet.uid);
-                cv.put("version", packet.version);
-                cv.put("protocol", packet.protocol);
-                cv.put("daddr", dname == null ? packet.daddr : dname);
-                cv.put("dport", packet.dport);
-                if (block < 0)
+            db.beginTransactionNonExclusive();
+            try {
+                ContentValues cv = new ContentValues();
+                cv.put("time", packet.time);
+                cv.put("allowed", packet.allowed ? 1 : 0);
+                if (block >= 0)
                     cv.put("block", block);
 
-                if (db.insert("access", null, cv) == -1)
-                    Log.e(TAG, "Insert access failed");
-            } else if (rows != 1)
-                Log.e(TAG, "Update access failed rows=" + rows);
+                // There is a segmented index on uid, version, protocol, daddr and dport
+                rows = db.update("access", cv, "uid = ? AND version = ? AND protocol = ? AND daddr = ? AND dport = ?",
+                        new String[]{
+                                Integer.toString(packet.uid),
+                                Integer.toString(packet.version),
+                                Integer.toString(packet.protocol),
+                                dname == null ? packet.daddr : dname,
+                                Integer.toString(packet.dport)});
+
+                if (rows == 0) {
+                    cv.put("uid", packet.uid);
+                    cv.put("version", packet.version);
+                    cv.put("protocol", packet.protocol);
+                    cv.put("daddr", dname == null ? packet.daddr : dname);
+                    cv.put("dport", packet.dport);
+                    if (block < 0)
+                        cv.put("block", block);
+
+                    if (db.insert("access", null, cv) == -1)
+                        Log.e(TAG, "Insert access failed");
+                } else if (rows != 1)
+                    Log.e(TAG, "Update access failed rows=" + rows);
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
 
         notifyAccessChanged();
         return (rows == 0);
     }
 
-    public DatabaseHelper setAccess(long id, int block) {
-        synchronized (context.getApplicationContext()) {
+    public void updateUsage(Usage usage, String dname) {
+        lock.writeLock().lock();
+        try {
             SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                // There is a segmented index on uid, version, protocol, daddr and dport
+                String selection = "uid = ? AND version = ? AND protocol = ? AND daddr = ? AND dport = ?";
+                String[] selectionArgs = new String[]{
+                        Integer.toString(usage.Uid),
+                        Integer.toString(usage.Version),
+                        Integer.toString(usage.Protocol),
+                        dname == null ? usage.DAddr : dname,
+                        Integer.toString(usage.DPort)
+                };
 
-            ContentValues cv = new ContentValues();
-            cv.put("block", block);
-            cv.put("allowed", -1);
+                Cursor cursor = db.query("access", new String[]{"sent", "received", "connections"}, selection, selectionArgs, null, null, null);
+                long sent = 0;
+                long received = 0;
+                int connections = 0;
+                int colSent = cursor.getColumnIndex("sent");
+                int colReceived = cursor.getColumnIndex("received");
+                int colConnections = cursor.getColumnIndex("connections");
+                if (cursor.moveToNext()) {
+                    sent = cursor.isNull(colSent) ? 0 : cursor.getLong(colSent);
+                    received = cursor.isNull(colReceived) ? 0 : cursor.getLong(colReceived);
+                    connections = cursor.isNull(colConnections) ? 0 : cursor.getInt(colConnections);
+                }
+                cursor.close();
 
-            if (db.update("access", cv, "ID = ?", new String[]{Long.toString(id)}) != 1)
-                Log.e(TAG, "Set access failed");
+                ContentValues cv = new ContentValues();
+                cv.put("sent", sent + usage.Sent);
+                cv.put("received", received + usage.Received);
+                cv.put("connections", connections + 1);
+
+                int rows = db.update("access", cv, selection, selectionArgs);
+                if (rows != 1)
+                    Log.e(TAG, "Update usage failed rows=" + rows);
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
 
         notifyAccessChanged();
-        return this;
     }
 
-    public DatabaseHelper clearAccess() {
-        synchronized (context.getApplicationContext()) {
-            SQLiteDatabase db = this.getReadableDatabase();
-            db.delete("access", null, null);
+    public void setAccess(long id, int block) {
+        lock.writeLock().lock();
+        try {
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                ContentValues cv = new ContentValues();
+                cv.put("block", block);
+                cv.put("allowed", -1);
+
+                if (db.update("access", cv, "ID = ?", new String[]{Long.toString(id)}) != 1)
+                    Log.e(TAG, "Set access failed");
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
 
         notifyAccessChanged();
-        return this;
     }
 
-    public DatabaseHelper clearAccess(int uid) {
-        synchronized (context.getApplicationContext()) {
-            SQLiteDatabase db = this.getReadableDatabase();
-            db.delete("access", "uid = ? AND block < 0", new String[]{Integer.toString(uid)});
+    public void clearAccess() {
+        lock.writeLock().lock();
+        try {
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                db.delete("access", null, null);
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
 
         notifyAccessChanged();
-        return this;
+    }
+
+    public void clearAccess(int uid, boolean keeprules) {
+        lock.writeLock().lock();
+        try {
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                // There is a segmented index on uid
+                // There is an index on block
+                if (keeprules)
+                    db.delete("access", "uid = ? AND block < 0", new String[]{Integer.toString(uid)});
+                else
+                    db.delete("access", "uid = ?", new String[]{Integer.toString(uid)});
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+
+        notifyAccessChanged();
+    }
+
+    public void resetUsage(int uid) {
+        lock.writeLock().lock();
+        try {
+            // There is a segmented index on uid
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                ContentValues cv = new ContentValues();
+                cv.putNull("sent");
+                cv.putNull("received");
+                cv.putNull("connections");
+                db.update("access", cv,
+                        (uid < 0 ? null : "uid = ?"),
+                        (uid < 0 ? null : new String[]{Integer.toString(uid)}));
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+
+        notifyAccessChanged();
     }
 
     public Cursor getAccess(int uid) {
-        SQLiteDatabase db = this.getReadableDatabase();
-        String query = "SELECT ID AS _id, *";
-        query += " FROM access WHERE uid = ?";
-        query += " ORDER BY time DESC";
-        query += " LIMIT 50";
-        return db.rawQuery(query, new String[]{Integer.toString(uid)});
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
+            // There is a segmented index on uid
+            // There is no index on time for write performance
+            String query = "SELECT a.ID AS _id, a.*";
+            query += ", (SELECT COUNT(DISTINCT d.qname) FROM dns d WHERE d.resource IN (SELECT d1.resource FROM dns d1 WHERE d1.qname = a.daddr)) count";
+            query += " FROM access a";
+            query += " WHERE a.uid = ?";
+            query += " ORDER BY a.time DESC";
+            query += " LIMIT 50";
+            return db.rawQuery(query, new String[]{Integer.toString(uid)});
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     public Cursor getAccess() {
-        SQLiteDatabase db = this.getReadableDatabase();
-        return db.query("access", null, "block >= 0", null, null, null, "uid");
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
+            // There is a segmented index on uid
+            // There is an index on block
+            return db.query("access", null, "block >= 0", null, null, null, "uid");
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
-    public Cursor getAccessUnset(int uid) {
-        SQLiteDatabase db = this.getReadableDatabase();
-        String query = "SELECT MAX(time) AS time, daddr, allowed";
-        query += " FROM access";
-        query += " WHERE uid = ?";
-        query += " AND block < 0";
-        query += " GROUP BY daddr, allowed";
-        query += " ORDER BY time DESC";
-        return db.rawQuery(query, new String[]{Integer.toString(uid)});
+    public Cursor getAccessUnset(int uid, int limit, long since) {
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
+            // There is a segmented index on uid, block and daddr
+            // There is no index on allowed and time for write performance
+            String query = "SELECT MAX(time) AS time, daddr, allowed";
+            query += " FROM access";
+            query += " WHERE uid = ?";
+            query += " AND block < 0";
+            query += " AND time >= ?";
+            query += " GROUP BY daddr, allowed";
+            query += " ORDER BY time DESC";
+            if (limit > 0)
+                query += " LIMIT " + limit;
+            return db.rawQuery(query, new String[]{Integer.toString(uid), Long.toString(since)});
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
-    public long getRuleCount(int uid) {
-        SQLiteDatabase db = this.getReadableDatabase();
-        return db.compileStatement("SELECT COUNT(*) FROM access WHERE block >=0 AND uid =" + uid).simpleQueryForLong();
+    public long getHostCount(int uid, boolean usecache) {
+        if (usecache)
+            synchronized (mapUidHosts) {
+                if (mapUidHosts.containsKey(uid))
+                    return mapUidHosts.get(uid);
+            }
+
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
+            // There is a segmented index on uid
+            // There is an index on block
+            long hosts = db.compileStatement("SELECT COUNT(*) FROM access WHERE block >= 0 AND uid =" + uid).simpleQueryForLong();
+            synchronized (mapUidHosts) {
+                mapUidHosts.put(uid, hosts);
+            }
+            return hosts;
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     // DNS
 
-    public DatabaseHelper insertDns(ResourceRecord rr) {
-        synchronized (context.getApplicationContext()) {
-            SQLiteDatabase db = this.getWritableDatabase();
-
-            ContentValues cv = new ContentValues();
-            cv.put("time", rr.Time);
-            cv.put("ttl", rr.TTL);
-
-            int rows = db.update("dns", cv, "qname = ? AND aname = ? AND resource = ?",
-                    new String[]{rr.QName, rr.AName, rr.Resource});
-
-            if (rows == 0) {
-                cv.put("qname", rr.QName);
-                cv.put("aname", rr.AName);
-                cv.put("resource", rr.Resource);
-
-                if (db.insert("dns", null, cv) == -1)
-                    Log.e(TAG, "Insert dns failed");
-            } else if (rows != 1)
-                Log.e(TAG, "Update dns failed rows=" + rows);
-        }
-
-        return this;
-    }
-
-    public DatabaseHelper cleanupDns(long time) {
-        // There is no index on time for write performance
-        synchronized (context.getApplicationContext()) {
-            SQLiteDatabase db = this.getWritableDatabase();
-            int rows = db.delete("dns", "time < ?", new String[]{Long.toString(time)});
-            Log.i(TAG, "Cleanup DNS" +
-                    " before=" + SimpleDateFormat.getDateTimeInstance().format(new Date(time)) +
-                    " rows=" + rows);
-        }
-        return this;
-    }
-
-    public String getQName(String ip) {
-        SQLiteDatabase db = this.getReadableDatabase();
+    public boolean insertDns(ResourceRecord rr) {
+        lock.writeLock().lock();
         try {
-            return db.compileStatement(
-                    "SELECT qname FROM dns WHERE resource = '" + ip.replace("'", "''") + "'")
-                    .simpleQueryForString();
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                int ttl = rr.TTL;
+
+                int min = Integer.parseInt(prefs.getString("ttl", "259200"));
+                if (ttl < min)
+                    ttl = min;
+
+                ContentValues cv = new ContentValues();
+                cv.put("time", rr.Time);
+                cv.put("ttl", ttl * 1000L);
+
+                int rows = db.update("dns", cv, "qname = ? AND aname = ? AND resource = ?",
+                        new String[]{rr.QName, rr.AName, rr.Resource});
+
+                if (rows == 0) {
+                    cv.put("qname", rr.QName);
+                    cv.put("aname", rr.AName);
+                    cv.put("resource", rr.Resource);
+
+                    if (db.insert("dns", null, cv) == -1)
+                        Log.e(TAG, "Insert dns failed");
+                } else if (rows != 1)
+                    Log.e(TAG, "Update dns failed rows=" + rows);
+
+                db.setTransactionSuccessful();
+
+                return (rows == 0);
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public void cleanupDns() {
+        lock.writeLock().lock();
+        try {
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                // There is no index on time for write performance
+                long now = new Date().getTime();
+                db.execSQL("DELETE FROM dns WHERE time + ttl < " + now);
+                Log.i(TAG, "Cleanup DNS");
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public void clearDns() {
+        lock.writeLock().lock();
+        try {
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                db.delete("dns", null, new String[]{});
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public String getQName(int uid, String ip) {
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
+            // There is a segmented index on resource
+            // There is an index on access.daddr
+            String query = "SELECT d.qname";
+            query += " FROM dns AS d";
+            query += " LEFT JOIN access AS a";
+            query += "   ON a.daddr = d.qname AND a.uid = " + uid;
+            query += " WHERE d.resource = '" + ip.replace("'", "''") + "'";
+            query += " ORDER BY CASE a.daddr WHEN NULL THEN 1 ELSE 0 END, d.qname";
+            query += " LIMIT 1";
+            return db.compileStatement(query).simpleQueryForString();
         } catch (SQLiteDoneException ignored) {
             // Not found
             return null;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public Cursor getAlternateQNames(String qname) {
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
+            String query = "SELECT DISTINCT d2.qname";
+            query += " FROM dns d1";
+            query += " JOIN dns d2";
+            query += "   ON d2.resource = d1.resource AND d2.id <> d1.id";
+            query += " WHERE d1.qname = ?";
+            query += " ORDER BY d2.qname";
+            return db.rawQuery(query, new String[]{qname});
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
     public Cursor getDns() {
-        SQLiteDatabase db = this.getReadableDatabase();
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
+            // There is an index on resource
+            // There is a segmented index on qname
+            String query = "SELECT ID AS _id, *";
+            query += " FROM dns";
+            query += " ORDER BY resource, qname";
+            return db.rawQuery(query, new String[]{});
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
 
-        String query = "SELECT a.uid, a.version, a.protocol, a.daddr, d.resource, a.dport, a.block";
-        query += " FROM access AS a";
-        query += " JOIN dns AS d";
-        query += "   ON d.qname = a.daddr";
-        query += " WHERE a.block >= 0";
+    public Cursor getAccessDns(String dname) {
+        long now = new Date().getTime();
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
 
-        return db.rawQuery(query, new String[]{});
+            // There is a segmented index on dns.qname
+            // There is an index on access.daddr and access.block
+            String query = "SELECT a.uid, a.version, a.protocol, a.daddr, d.resource, a.dport, a.block, d.time, d.ttl";
+            query += " FROM access AS a";
+            query += " LEFT JOIN dns AS d";
+            query += "   ON d.qname = a.daddr";
+            query += " WHERE a.block >= 0";
+            query += " AND d.time + d.ttl >= " + now;
+            if (dname != null)
+                query += " AND a.daddr = ?";
+
+            return db.rawQuery(query, dname == null ? new String[]{} : new String[]{dname});
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     // Forward
 
-    public DatabaseHelper addForward(int protocol, int dport, String raddr, int rport, int ruid) {
-        synchronized (context.getApplicationContext()) {
+    public void addForward(int protocol, int dport, String raddr, int rport, int ruid) {
+        lock.writeLock().lock();
+        try {
             SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                ContentValues cv = new ContentValues();
+                cv.put("protocol", protocol);
+                cv.put("dport", dport);
+                cv.put("raddr", raddr);
+                cv.put("rport", rport);
+                cv.put("ruid", ruid);
 
-            ContentValues cv = new ContentValues();
-            cv.put("protocol", protocol);
-            cv.put("dport", dport);
-            cv.put("raddr", raddr);
-            cv.put("rport", rport);
-            cv.put("ruid", ruid);
+                if (db.insert("forward", null, cv) < 0)
+                    Log.e(TAG, "Insert forward failed");
 
-            if (db.insert("forward", null, cv) < 0)
-                Log.e(TAG, "Insert forward failed");
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
-        return this;
+
+        notifyForwardChanged();
     }
 
-    public DatabaseHelper deleteForward(int protocol, int dport) {
-        synchronized (context.getApplicationContext()) {
+    public void deleteForward() {
+        lock.writeLock().lock();
+        try {
             SQLiteDatabase db = this.getWritableDatabase();
-            db.delete("forward", "protocol = ? AND dport = ?",
-                    new String[]{Integer.toString(protocol), Integer.toString(dport)});
+            db.beginTransactionNonExclusive();
+            try {
+                db.delete("forward", null, null);
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
-        return this;
+
+        notifyForwardChanged();
+    }
+
+    public void deleteForward(int protocol, int dport) {
+        lock.writeLock().lock();
+        try {
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                db.delete("forward", "protocol = ? AND dport = ?",
+                        new String[]{Integer.toString(protocol), Integer.toString(dport)});
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+
+        notifyForwardChanged();
     }
 
     public Cursor getForwarding() {
-        SQLiteDatabase db = this.getReadableDatabase();
-        String query = "SELECT ID AS _id, *";
-        query += " FROM forward";
-        query += " ORDER BY dport";
-        return db.rawQuery(query, new String[]{});
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
+            String query = "SELECT ID AS _id, *";
+            query += " FROM forward";
+            query += " ORDER BY dport";
+            return db.rawQuery(query, new String[]{});
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public void addApp(String packageName, String label, boolean system, boolean internet, boolean enabled) {
+        lock.writeLock().lock();
+        try {
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                ContentValues cv = new ContentValues();
+                cv.put("package", packageName);
+                if (label == null)
+                    cv.putNull("label");
+                else
+                    cv.put("label", label);
+                cv.put("system", system ? 1 : 0);
+                cv.put("internet", internet ? 1 : 0);
+                cv.put("enabled", enabled ? 1 : 0);
+
+                if (db.insert("app", null, cv) < 0)
+                    Log.e(TAG, "Insert app failed");
+
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public Cursor getApp(String packageName) {
+        lock.readLock().lock();
+        try {
+            SQLiteDatabase db = this.getReadableDatabase();
+
+            // There is an index on package
+            String query = "SELECT * FROM app WHERE package = ?";
+
+            return db.rawQuery(query, new String[]{packageName});
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public void clearApps() {
+        lock.writeLock().lock();
+        try {
+            SQLiteDatabase db = this.getWritableDatabase();
+            db.beginTransactionNonExclusive();
+            try {
+                db.delete("app", null, null);
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     public void addLogChangedListener(LogChangedListener listener) {
@@ -601,6 +1087,14 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         accessChangedListeners.remove(listener);
     }
 
+    public void addForwardChangedListener(ForwardChangedListener listener) {
+        forwardChangedListeners.add(listener);
+    }
+
+    public void removeForwardChangedListener(ForwardChangedListener listener) {
+        forwardChangedListeners.remove(listener);
+    }
+
     private void notifyLogChanged() {
         Message msg = handler.obtainMessage();
         msg.what = MSG_LOG;
@@ -610,6 +1104,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private void notifyAccessChanged() {
         Message msg = handler.obtainMessage();
         msg.what = MSG_ACCESS;
+        handler.sendMessage(msg);
+    }
+
+    private void notifyForwardChanged() {
+        Message msg = handler.obtainMessage();
+        msg.what = MSG_FORWARD;
         handler.sendMessage(msg);
     }
 
@@ -638,6 +1138,14 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 } catch (Throwable ex) {
                     Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
                 }
+
+        } else if (msg.what == MSG_FORWARD) {
+            for (ForwardChangedListener listener : forwardChangedListeners)
+                try {
+                    listener.onChanged();
+                } catch (Throwable ex) {
+                    Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
+                }
         }
     }
 
@@ -646,6 +1154,10 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     public interface AccessChangedListener {
+        void onChanged();
+    }
+
+    public interface ForwardChangedListener {
         void onChanged();
     }
 }

@@ -2,6 +2,14 @@
     <attr name="colorOn" format="reference" />
     <attr name="colorOff" format="reference" />
     <attr name="expander" format="reference" />
+    <attr name="iconQueue" format="reference" />
+    <attr name="iconMetered" format="reference" />
+    <attr name="iconSettings" format="reference" />
+    <attr name="iconDatasaver" format="reference" />
+    <attr name="iconLaunch" format="reference" />
+    <attr name="iconDelete" format="reference" />
+    <attr name="iconPlay" format="reference" />
+    <attr name="iconPause" format="reference" />
 
     <style name="AppDialog" parent="Theme.AppCompat.Dialog">
         <item name="windowActionBar">false</item>
@@ -9,10 +17,28 @@
     </style>
 
     <style name="BaseThemeDark" parent="Theme.AppCompat.Light.DarkActionBar">
+        <item name="expander">@drawable/expander_black</item>
+        <item name="iconQueue">@drawable/ic_hourglass_empty_black_24dp</item>
+        <item name="iconMetered">@drawable/ic_attach_money_black_24dp</item>
+        <item name="iconSettings">@drawable/ic_settings_black_24dp</item>
+        <item name="iconDatasaver">@drawable/ic_perm_data_setting_black_24dp</item>
+        <item name="iconLaunch">@drawable/ic_launch_black_24dp</item>
+        <item name="iconDelete">@drawable/ic_delete_black_24dp</item>
+        <item name="iconPlay">@drawable/ic_play_arrow_black_24dp</item>
+        <item name="iconPause">@drawable/ic_pause_black_24dp</item>
         <item name="android:windowDisablePreview">true</item>
     </style>
 
     <style name="BaseThemeLight" parent="Theme.AppCompat">
+        <item name="expander">@drawable/expander_white</item>
+        <item name="iconQueue">@drawable/ic_hourglass_empty_white_24dp</item>
+        <item name="iconMetered">@drawable/ic_attach_money_white_24dp</item>
+        <item name="iconSettings">@drawable/ic_settings_white_24dp</item>
+        <item name="iconDatasaver">@drawable/ic_perm_data_setting_white_24dp</item>
+        <item name="iconLaunch">@drawable/ic_launch_white_24dp</item>
+        <item name="iconDelete">@drawable/ic_delete_white_24dp</item>
+        <item name="iconPlay">@drawable/ic_play_arrow_white_24dp</item>
+        <item name="iconPause">@drawable/ic_pause_white_24dp</item>
         <item name="android:windowDisablePreview">true</item>
     </style>
 
@@ -22,7 +48,6 @@
         <item name="colorAccent">@color/colorTealAccent</item>
         <item name="colorOn">@color/colorTealOn</item>
         <item name="colorOff">@color/colorTealOff</item>
-        <item name="expander">@drawable/expander_black</item>
     </style>
 
     <style name="AppThemeTealDark" parent="BaseThemeLight">
@@ -31,7 +56,6 @@
         <item name="colorAccent">@color/colorTealAccent</item>
         <item name="colorOn">@color/colorTealOn</item>
         <item name="colorOff">@color/colorTealOff</item>
-        <item name="expander">@drawable/expander_white</item>
     </style>
 
     <style name="AppThemeBlue" parent="BaseThemeDark">
@@ -40,7 +64,6 @@
         <item name="colorAccent">@color/colorBlueAccent</item>
         <item name="colorOn">@color/colorBlueOn</item>
         <item name="colorOff">@color/colorBlueOff</item>
-        <item name="expander">@drawable/expander_black</item>
     </style>
 
     <style name="AppThemeBlueDark" parent="BaseThemeLight">
@@ -49,7 +72,6 @@
         <item name="colorAccent">@color/colorBlueAccent</item>
         <item name="colorOn">@color/colorBlueOn</item>
         <item name="colorOff">@color/colorBlueOff</item>
-        <item name="expander">@drawable/expander_white</item>
     </style>
 
     <style name="AppThemePurple" parent="BaseThemeDark">
@@ -58,7 +80,6 @@
         <item name="colorAccent">@color/colorPurpleAccent</item>
         <item name="colorOn">@color/colorPurpleOn</item>
         <item name="colorOff">@color/colorPurpleOff</item>
-        <item name="expander">@drawable/expander_black</item>
     </style>
 
     <style name="AppThemePurpleDark" parent="BaseThemeLight">
@@ -67,7 +88,6 @@
         <item name="colorAccent">@color/colorPurpleAccent</item>
         <item name="colorOn">@color/colorPurpleOn</item>
         <item name="colorOff">@color/colorPurpleOff</item>
-        <item name="expander">@drawable/expander_white</item>
     </style>
 
     <style name="AppThemeAmber" parent="BaseThemeDark">
@@ -76,7 +96,6 @@
         <item name="colorAccent">@color/colorAmberAccent</item>
         <item name="colorOn">@color/colorAmberOn</item>
         <item name="colorOff">@color/colorAmberOff</item>
-        <item name="expander">@drawable/expander_black</item>
     </style>
 
     <style name="AppThemeAmberDark" parent="BaseThemeLight">
@@ -85,7 +104,6 @@
         <item name="colorAccent">@color/colorAmberAccent</item>
         <item name="colorOn">@color/colorAmberOn</item>
         <item name="colorOff">@color/colorAmberOff</item>
-        <item name="expander">@drawable/expander_white</item>
     </style>
 
     <style name="AppThemeOrange" parent="BaseThemeDark">
@@ -94,7 +112,6 @@
         <item name="colorAccent">@color/colorOrangeAccent</item>
         <item name="colorOn">@color/colorOrangeOn</item>
         <item name="colorOff">@color/colorOrangeOff</item>
-        <item name="expander">@drawable/expander_black</item>
     </style>
 
     <style name="AppThemeOrangeDark" parent="BaseThemeLight">
@@ -103,7 +120,6 @@
         <item name="colorAccent">@color/colorOrangeAccent</item>
         <item name="colorOn">@color/colorOrangeOn</item>
         <item name="colorOff">@color/colorOrangeOff</item>
-        <item name="expander">@drawable/expander_white</item>
     </style>
 
     <style name="AppThemeGreen" parent="BaseThemeDark">
@@ -112,7 +128,6 @@
         <item name="colorAccent">@color/colorGreenAccent</item>
         <item name="colorOn">@color/colorGreenOn</item>
         <item name="colorOff">@color/colorGreenOff</item>
-        <item name="expander">@drawable/expander_black</item>
     </style>
 
     <style name="AppThemeGreenDark" parent="BaseThemeLight">
@@ -121,6 +136,5 @@
         <item name="colorAccent">@color/colorGreenAccent</item>
         <item name="colorOn">@color/colorGreenOn</item>
         <item name="colorOff">@color/colorGreenOff</item>
-        <item name="expander">@drawable/expander_white</item>
     </style>
 </resources>
