@@ -1,85 +1,34 @@
 package eu.faircode.netguard;
 
 
-import android.annotation.TargetApi;
-import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.SharedPreferences;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
-import android.content.res.Configuration;
-import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.Path;
-import android.graphics.Typeface;
 import android.net.ConnectivityManager;
-import android.net.LinkProperties;
-import android.net.Network;
-import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
-import android.net.NetworkRequest;
-import android.net.TrafficStats;
-import android.net.Uri;
 import android.net.VpnService;
 import android.os.Build;
-import android.os.Handler;
-import android.os.HandlerThread;
-import android.os.Looper;
-import android.os.Message;
 import android.os.ParcelFileDescriptor;
-import android.os.PowerManager;
-import android.os.SystemClock;
 import android.preference.PreferenceManager;
-import android.telephony.PhoneStateListener;
-import android.telephony.TelephonyManager;
-import android.text.Spannable;
-import android.text.SpannableString;
 import android.text.TextUtils;
-import android.text.style.ForegroundColorSpan;
-import android.text.style.StyleSpan;
 import android.util.Log;
 import android.util.TypedValue;
-import android.widget.RemoteViews;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.math.BigInteger;
 import java.net.Inet4Address;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.net.InterfaceAddress;
 import java.net.NetworkInterface;
-import java.net.Socket;
-import java.net.SocketException;
-import java.net.URL;
-import java.net.UnknownHostException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Date;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -88,13 +37,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import android.os.Process;
-
 
 public class ServiceSinkhole extends VpnService {
     private static final String TAG = "NetGuard.Service";
 
-    private State state = State.none;
     private boolean last_connected = false;
     private boolean last_metered = true;
     private boolean last_interactive = false;
@@ -108,52 +54,26 @@ public class ServiceSinkhole extends VpnService {
     private Map<String, Boolean> mapHostsBlocked = new HashMap<>();
     private Map<Integer, Boolean> mapUidAllowed = new HashMap<>();
     private Map<Integer, Integer> mapUidKnown = new HashMap<>();
-    private final Map<Long, Map<InetAddress, IPRule>> mapUidIPFilters = new HashMap<>();
     private Map<Integer, Forward> mapForward = new HashMap<>();
     private Map<Integer, Boolean> mapNotify = new HashMap<>();
     private ReentrantReadWriteLock lock = new ReentrantReadWriteLock(true);
-
-    private volatile Looper commandLooper;
-    private volatile Looper logLooper;
-    private volatile Looper statsLooper;
-
     private static final int NOTIFY_ENFORCING = 1;
-    private static final int NOTIFY_DISABLED = 3;
-    private static final int NOTIFY_AUTOSTART = 4;
     private static final int NOTIFY_ERROR = 5;
     public static final String EXTRA_COMMAND = "Command";
     private static final String EXTRA_REASON = "Reason";
     public static final String EXTRA_INTERACTIVE = "Interactive";
     public static final String EXTRA_TEMPORARY = "Temporary";
-
-    private enum State {none, waiting, enforcing, stats}
-
-    public enum Command {run, start, reload, stop, stats, set, householding, watchdog}
-
-    private static final String ACTION_HOUSE_HOLDING = "eu.faircode.netguard.HOUSE_HOLDING";
-
     private native long jni_init(int sdk);
-
     private native void jni_start(long context, int loglevel);
-
     private native void jni_run(long context, int tun, boolean fwd53, int rcode);
-
     private native void jni_stop(long context);
-
     private native void jni_clear(long context);
-
     private native int jni_get_mtu();
-
     private native void jni_done(long context);
 
     private void start() {
         if (vpn == null) {
-            if (state != State.none) {
-                Log.d(TAG, "Stop foreground state=" + state.toString());
-                stopForeground(true);
-            }
             startForeground(NOTIFY_ENFORCING, getEnforcingNotification(-1, -1, -1));
-            state = State.enforcing;
             List<Rule> listRule = Rule.getRules(true, ServiceSinkhole.this);
             List<Rule> listAllowed = getAllowedRules(listRule);
             last_builder = getBuilder(listAllowed, listRule);
@@ -391,7 +311,6 @@ public class ServiceSinkhole extends VpnService {
         mapUidAllowed.clear();
         mapUidKnown.clear();
         mapHostsBlocked.clear();
-        mapUidIPFilters.clear();
         mapForward.clear();
         mapNotify.clear();
         lock.writeLock().unlock();
@@ -405,18 +324,6 @@ public class ServiceSinkhole extends VpnService {
         mapUidKnown.clear();
         for (Rule rule : listRule)
             mapUidKnown.put(rule.uid, rule.uid);
-        lock.writeLock().unlock();
-    }
-
-    private void prepareNotify(List<Rule> listRule) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        boolean notify = prefs.getBoolean("notify_access", false);
-        boolean system = prefs.getBoolean("manage_system", false);
-
-        lock.writeLock().lock();
-        mapNotify.clear();
-        for (Rule rule : listRule)
-            mapNotify.put(rule.uid, notify && rule.notify && (system || !rule.system));
         lock.writeLock().unlock();
     }
 
@@ -514,10 +421,6 @@ public class ServiceSinkhole extends VpnService {
         return false;
     }
 
-    private boolean isSupported(int protocol) {
-        return (protocol == 1 /* ICMPv4 */ || protocol == 59 /* ICMPv6 */ || protocol == 6 /* TCP */ || protocol == 17 /* UDP */);
-    }
-
     // Called from native code
     private Allowed isAddressAllowed(Packet packet) {
         Log.d(TAG, "isAddressAllowed: " + packet);
@@ -529,44 +432,14 @@ public class ServiceSinkhole extends VpnService {
 
     }
 
-
     @Override
     public void onCreate() {
         Log.i(TAG, "Create version=" + Util.getSelfVersionName(this) + "/" + Util.getSelfVersionCode(this));
-
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-
         // Native init
         jni_context = jni_init(Build.VERSION.SDK_INT);
-        boolean pcap = prefs.getBoolean("pcap", false);
-//        setPcap(pcap, this);
-
         Util.setTheme(this);
         super.onCreate();
-
-        HandlerThread commandThread = new HandlerThread(getString(R.string.app_name) + " command", Process.THREAD_PRIORITY_FOREGROUND);
-        HandlerThread logThread = new HandlerThread(getString(R.string.app_name) + " log", Process.THREAD_PRIORITY_BACKGROUND);
-        HandlerThread statsThread = new HandlerThread(getString(R.string.app_name) + " stats", Process.THREAD_PRIORITY_BACKGROUND);
-        commandThread.start();
-        logThread.start();
-        statsThread.start();
-
-        commandLooper = commandThread.getLooper();
-        logLooper = logThread.getLooper();
-        statsLooper = statsThread.getLooper();
-
-        // Setup house holding
-        Intent alarmIntent = new Intent(this, ServiceSinkhole.class);
-        alarmIntent.setAction(ACTION_HOUSE_HOLDING);
-        PendingIntent pi;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            pi = PendingIntent.getForegroundService(this, 0, alarmIntent, PendingIntent.FLAG_UPDATE_CURRENT);
-        else pi = PendingIntent.getService(this, 0, alarmIntent, PendingIntent.FLAG_UPDATE_CURRENT);
-
-        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        am.setInexactRepeating(AlarmManager.RTC, SystemClock.elapsedRealtime() + 60 * 1000, AlarmManager.INTERVAL_HALF_DAY, pi);
     }
-
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -574,25 +447,9 @@ public class ServiceSinkhole extends VpnService {
         return START_STICKY;
     }
 
-
-    @Override
-    public void onRevoke() {
-        Log.i(TAG, "Revoke");
-        // Disable firewall (will result in stop command)
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        prefs.edit().putBoolean("enabled", false).apply();
-        // Feedback
-        showDisabledNotification();
-        WidgetMain.updateWidgets(this);
-        super.onRevoke();
-    }
-
     @Override
     public void onDestroy() {
         Log.i(TAG, "Destroy");
-        commandLooper.quit();
-        logLooper.quit();
-        statsLooper.quit();
         try {
             if (vpn != null) {
                 stopNative(vpn, true);
@@ -656,44 +513,6 @@ public class ServiceSinkhole extends VpnService {
         nm.notify(NOTIFY_ENFORCING, notification);
     }
 
-
-    private void showDisabledNotification() {
-        Intent main = new Intent(this, ActivityMain.class);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, main, PendingIntent.FLAG_UPDATE_CURRENT);
-
-        TypedValue tv = new TypedValue();
-        getTheme().resolveAttribute(R.attr.colorOff, tv, true);
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, "notify");
-        builder.setSmallIcon(R.drawable.ic_error_white_24dp).setContentTitle(getString(R.string.app_name)).setContentText(getString(R.string.msg_revoked)).setContentIntent(pi).setColor(tv.data).setOngoing(false).setAutoCancel(true);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
-            builder.setCategory(NotificationCompat.CATEGORY_STATUS).setVisibility(NotificationCompat.VISIBILITY_SECRET);
-
-        NotificationCompat.BigTextStyle notification = new NotificationCompat.BigTextStyle(builder);
-        notification.bigText(getString(R.string.msg_revoked));
-
-        NotificationManagerCompat.from(this).notify(NOTIFY_DISABLED, notification.build());
-    }
-
-    private void showAutoStartNotification() {
-        Intent main = new Intent(this, ActivityMain.class);
-        main.putExtra(ActivityMain.EXTRA_APPROVE, true);
-        PendingIntent pi = PendingIntent.getActivity(this, NOTIFY_AUTOSTART, main, PendingIntent.FLAG_UPDATE_CURRENT);
-
-        TypedValue tv = new TypedValue();
-        getTheme().resolveAttribute(R.attr.colorOff, tv, true);
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, "notify");
-        builder.setSmallIcon(R.drawable.ic_error_white_24dp).setContentTitle(getString(R.string.app_name)).setContentText(getString(R.string.msg_autostart)).setContentIntent(pi).setColor(tv.data).setOngoing(false).setAutoCancel(true);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
-            builder.setCategory(NotificationCompat.CATEGORY_STATUS).setVisibility(NotificationCompat.VISIBILITY_SECRET);
-
-        NotificationCompat.BigTextStyle notification = new NotificationCompat.BigTextStyle(builder);
-        notification.bigText(getString(R.string.msg_autostart));
-
-        NotificationManagerCompat.from(this).notify(NOTIFY_AUTOSTART, notification.build());
-    }
-
     private void showErrorNotification(String message) {
         Intent main = new Intent(this, ActivityMain.class);
         PendingIntent pi = PendingIntent.getActivity(this, 0, main, PendingIntent.FLAG_UPDATE_CURRENT);
@@ -713,6 +532,40 @@ public class ServiceSinkhole extends VpnService {
         NotificationManagerCompat.from(this).notify(NOTIFY_ERROR, notification.build());
     }
 
+    public static void run(String reason, Context context) {
+        Intent intent = new Intent(context, ServiceSinkhole.class);
+        intent.putExtra(EXTRA_REASON, reason);
+        ContextCompat.startForegroundService(context, intent);
+    }
+
+    public static void start(String reason, Context context) {
+        Intent intent = new Intent(context, ServiceSinkhole.class);
+        intent.putExtra(EXTRA_REASON, reason);
+        ContextCompat.startForegroundService(context, intent);
+    }
+
+    public static void reload(String reason, Context context, boolean interactive) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        if (prefs.getBoolean("enabled", false)) {
+            Intent intent = new Intent(context, ServiceSinkhole.class);
+            intent.putExtra(EXTRA_REASON, reason);
+            intent.putExtra(EXTRA_INTERACTIVE, interactive);
+            ContextCompat.startForegroundService(context, intent);
+        }
+    }
+
+    public static void stop(String reason, Context context, boolean vpnonly) {
+        Intent intent = new Intent(context, ServiceSinkhole.class);
+        intent.putExtra(EXTRA_REASON, reason);
+        intent.putExtra(EXTRA_TEMPORARY, vpnonly);
+        ContextCompat.startForegroundService(context, intent);
+    }
+
+    public static void reloadStats(String reason, Context context) {
+        Intent intent = new Intent(context, ServiceSinkhole.class);
+        intent.putExtra(EXTRA_REASON, reason);
+        ContextCompat.startForegroundService(context, intent);
+    }
 
     private class Builder extends VpnService.Builder {
         private NetworkInfo networkInfo;
@@ -796,73 +649,5 @@ public class ServiceSinkhole extends VpnService {
 
             return true;
         }
-    }
-
-    private class IPRule {
-        private boolean block;
-        private long expires;
-
-        public IPRule(boolean block, long expires) {
-            this.block = block;
-            this.expires = expires;
-        }
-
-        public boolean isBlocked() {
-            return this.block;
-        }
-
-        public boolean isExpired() {
-            return System.currentTimeMillis() > this.expires;
-        }
-
-        public void updateExpires(long expires) {
-            this.expires = Math.max(this.expires, expires);
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            IPRule other = (IPRule) obj;
-            return (this.block == other.block && this.expires == other.expires);
-        }
-    }
-
-    public static void run(String reason, Context context) {
-        Intent intent = new Intent(context, ServiceSinkhole.class);
-        intent.putExtra(EXTRA_COMMAND, Command.run);
-        intent.putExtra(EXTRA_REASON, reason);
-        ContextCompat.startForegroundService(context, intent);
-    }
-
-    public static void start(String reason, Context context) {
-        Intent intent = new Intent(context, ServiceSinkhole.class);
-        intent.putExtra(EXTRA_COMMAND, Command.start);
-        intent.putExtra(EXTRA_REASON, reason);
-        ContextCompat.startForegroundService(context, intent);
-    }
-
-    public static void reload(String reason, Context context, boolean interactive) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        if (prefs.getBoolean("enabled", false)) {
-            Intent intent = new Intent(context, ServiceSinkhole.class);
-            intent.putExtra(EXTRA_COMMAND, Command.reload);
-            intent.putExtra(EXTRA_REASON, reason);
-            intent.putExtra(EXTRA_INTERACTIVE, interactive);
-            ContextCompat.startForegroundService(context, intent);
-        }
-    }
-
-    public static void stop(String reason, Context context, boolean vpnonly) {
-        Intent intent = new Intent(context, ServiceSinkhole.class);
-        intent.putExtra(EXTRA_COMMAND, Command.stop);
-        intent.putExtra(EXTRA_REASON, reason);
-        intent.putExtra(EXTRA_TEMPORARY, vpnonly);
-        ContextCompat.startForegroundService(context, intent);
-    }
-
-    public static void reloadStats(String reason, Context context) {
-        Intent intent = new Intent(context, ServiceSinkhole.class);
-        intent.putExtra(EXTRA_COMMAND, Command.stats);
-        intent.putExtra(EXTRA_REASON, reason);
-        ContextCompat.startForegroundService(context, intent);
     }
 }
