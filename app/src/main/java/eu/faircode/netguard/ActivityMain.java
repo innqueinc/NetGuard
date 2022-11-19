@@ -34,17 +34,13 @@ import android.net.VpnService;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
-
-import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.text.style.ImageSpan;
-import android.text.style.UnderlineSpan;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -58,10 +54,8 @@ import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
-
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
@@ -148,10 +142,10 @@ public class ActivityMain extends AppCompatActivity implements SharedPreferences
         // Upgrade
         ReceiverAutostart.upgrade(initialized, this);
 
-        if (!getIntent().hasExtra(EXTRA_APPROVE)) {
-            if (enabled) ServiceSinkhole.start("UI", this);
-            else ServiceSinkhole.stop("UI", this, false);
-        }
+//        if (!getIntent().hasExtra(EXTRA_APPROVE)) {
+//            if (enabled) ServiceSinkhole.start("UI", this);
+//            else ServiceSinkhole.stop("UI", this, false);
+//        }
 
         // Action bar
         final View actionView = getLayoutInflater().inflate(R.layout.actionmain, null, false);
@@ -173,16 +167,13 @@ public class ActivityMain extends AppCompatActivity implements SharedPreferences
         getSupportActionBar().setTitle(null);
 
         // Netguard is busy
-        ivQueue.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View view) {
-                int location[] = new int[2];
-                actionView.getLocationOnScreen(location);
-                Toast toast = Toast.makeText(ActivityMain.this, R.string.msg_queue, Toast.LENGTH_LONG);
-                toast.setGravity(Gravity.TOP | Gravity.LEFT, location[0] + ivQueue.getLeft(), Math.round(location[1] + ivQueue.getBottom() - toast.getView().getPaddingTop()));
-                toast.show();
-                return true;
-            }
+        ivQueue.setOnLongClickListener(view -> {
+            int location[] = new int[2];
+            actionView.getLocationOnScreen(location);
+            Toast toast = Toast.makeText(ActivityMain.this, R.string.msg_queue, Toast.LENGTH_LONG);
+            toast.setGravity(Gravity.TOP | Gravity.LEFT, location[0] + ivQueue.getLeft(), Math.round(location[1] + ivQueue.getBottom() - toast.getView().getPaddingTop()));
+            toast.show();
+            return true;
         });
 
         // On/off switch
@@ -1139,4 +1130,6 @@ public class ActivityMain extends AppCompatActivity implements SharedPreferences
         }
         return intent;
     }
+
+
 }

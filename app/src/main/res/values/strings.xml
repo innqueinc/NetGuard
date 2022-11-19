@@ -346,4 +346,13 @@ Your internet traffic is not being sent to a remote VPN server.</string>
     <string name="ad_banner_unit_id" translatable="false">ca-app-pub-6350249268625326/8112779894</string>
     <string name="ad_test_device_id" translatable="false">B23E5E89C89F87C06C33861503174DFC</string>
     <string name="fingerprint" translatable="false">ef46f813d2c8a064d72c936b9b96d1cccc989378</string>
+    <string name="title_activity_main">MainActivity</string>
+    <!-- Strings used for fragments for navigation -->
+    <string name="first_fragment_label">First Fragment</string>
+    <string name="second_fragment_label">Second Fragment</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+
+    <string name="hello_first_fragment">Hello first fragment</string>
+    <string name="hello_second_fragment">Hello second fragment. Arg: %1$s</string>
 </resources>
