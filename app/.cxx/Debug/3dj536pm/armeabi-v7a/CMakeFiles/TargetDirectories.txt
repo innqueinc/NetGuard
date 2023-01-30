@@ -1,0 +1,3 @@
+/Users/johncarlo/Desktop/Opensource/NetGuard/app/.cxx/Debug/3dj536pm/armeabi-v7a/CMakeFiles/rebuild_cache.dir
+/Users/johncarlo/Desktop/Opensource/NetGuard/app/.cxx/Debug/3dj536pm/armeabi-v7a/CMakeFiles/edit_cache.dir
+/Users/johncarlo/Desktop/Opensource/NetGuard/app/.cxx/Debug/3dj536pm/armeabi-v7a/CMakeFiles/netguard.dir

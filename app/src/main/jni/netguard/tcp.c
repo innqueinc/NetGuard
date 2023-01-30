@@ -1,22 +1,3 @@
-/*
-    This file is part of NetGuard.
-
-    NetGuard is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    NetGuard is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with NetGuard.  If not, see <http://www.gnu.org/licenses/>.
-
-    Copyright 2015-2019 by Marcel Bokhorst (M66B)
-*/
-
 #include "netguard.h"
 
 extern char socks5_addr[INET6_ADDRSTRLEN + 1];
@@ -101,8 +82,8 @@ int check_tcp_session(const struct arguments *args, struct ng_session *s,
 
     if ((s->tcp.state == TCP_CLOSING || s->tcp.state == TCP_CLOSE) &&
         (s->tcp.sent || s->tcp.received)) {
-        account_usage(args, s->tcp.version, IPPROTO_TCP,
-                      dest, ntohs(s->tcp.dest), s->tcp.uid, s->tcp.sent, s->tcp.received);
+        account_usage(args, s->tcp.version, IPPROTO_TCP, dest, ntohs(s->tcp.dest), s->tcp.uid,
+                      s->tcp.sent, s->tcp.received);
         s->tcp.sent = 0;
         s->tcp.received = 0;
     }
@@ -237,14 +218,15 @@ uint32_t get_receive_window(const struct ng_session *cur) {
 void check_tcp_socket(const struct arguments *args,
                       const struct epoll_event *ev,
                       const int epoll_fd) {
-    struct ng_session *s = (struct ng_session *) ev->data.ptr;
 
+    struct ng_session *s = (struct ng_session *) ev->data.ptr;
     int oldstate = s->tcp.state;
     uint32_t oldlocal = s->tcp.local_seq;
     uint32_t oldremote = s->tcp.remote_seq;
 
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
+    // convert numeric IP address into a string
     if (s->tcp.version == 4) {
         inet_ntop(AF_INET, &s->tcp.saddr.ip4, source, sizeof(source));
         inet_ntop(AF_INET, &s->tcp.daddr.ip4, dest, sizeof(dest));
@@ -274,33 +256,6 @@ void check_tcp_socket(const struct arguments *args,
                         session, serr, strerror(serr));
 
         write_rst(args, &s->tcp);
-
-        // Connection refused
-        if (0)
-            if (err >= 0 && (serr == ECONNREFUSED || serr == EHOSTUNREACH)) {
-                struct icmp icmp;
-                memset(&icmp, 0, sizeof(struct icmp));
-                icmp.icmp_type = ICMP_UNREACH;
-                if (serr == ECONNREFUSED)
-                    icmp.icmp_code = ICMP_UNREACH_PORT;
-                else
-                    icmp.icmp_code = ICMP_UNREACH_HOST;
-                icmp.icmp_cksum = 0;
-                icmp.icmp_cksum = ~calc_checksum(0, (const uint8_t *) &icmp, 4);
-
-                struct icmp_session sicmp;
-                memset(&sicmp, 0, sizeof(struct icmp_session));
-                sicmp.version = s->tcp.version;
-                if (s->tcp.version == 4) {
-                    sicmp.saddr.ip4 = (__be32) s->tcp.saddr.ip4;
-                    sicmp.daddr.ip4 = (__be32) s->tcp.daddr.ip4;
-                } else {
-                    memcpy(&sicmp.saddr.ip6, &s->tcp.saddr.ip6, 16);
-                    memcpy(&sicmp.daddr.ip6, &s->tcp.daddr.ip6, 16);
-                }
-
-                write_icmp(args, &sicmp, (uint8_t *) &icmp, 8);
-            }
     } else {
         // Assume socket okay
         if (s->tcp.state == TCP_LISTEN) {
@@ -464,7 +419,6 @@ void check_tcp_socket(const struct arguments *args,
                 }
             }
         } else {
-
             // Always forward data
             int fwd = 0;
             if (ev->events & EPOLLOUT) {
@@ -516,7 +470,6 @@ void check_tcp_socket(const struct arguments *args,
                         }
                     }
                 }
-
                 // Log data buffered
                 struct segment *seg = s->tcp.forward;
                 while (seg != NULL) {
@@ -574,7 +527,6 @@ void check_tcp_socket(const struct arguments *args,
                                 log_android(ANDROID_LOG_WARN, "%s FIN sent", session);
                                 s->tcp.local_seq++; // local FIN
                             }
-
                             if (s->tcp.state == TCP_ESTABLISHED)
                                 s->tcp.state = TCP_FIN_WAIT1;
                             else if (s->tcp.state == TCP_CLOSE_WAIT)
@@ -1242,7 +1194,6 @@ ssize_t write_tcp(const struct arguments *args, const struct tcp_session *cur,
         memcpy(&pseudo.ip6ph_dst, &ip6->ip6_src, 16);
         pseudo.ip6ph_len = ip6->ip6_ctlun.ip6_un1.ip6_un1_plen;
         pseudo.ip6ph_nxt = ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
-
         csum = calc_checksum(0, (uint8_t *) &pseudo, sizeof(struct ip6_hdr_pseudo));
     }
 

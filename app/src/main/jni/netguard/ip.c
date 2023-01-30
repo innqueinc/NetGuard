@@ -1,22 +1,3 @@
-/*
-    This file is part of NetGuard.
-
-    NetGuard is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    NetGuard is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with NetGuard.  If not, see <http://www.gnu.org/licenses/>.
-
-    Copyright 2015-2019 by Marcel Bokhorst (M66B)
-*/
-
 #include "netguard.h"
 
 int max_tun_msg = 0;
@@ -57,7 +38,6 @@ int check_tun(const struct arguments *args,
         ssize_t length = read(args->tun, buffer, get_mtu());
         if (length < 0) {
             ng_free(buffer, __FILE__, __LINE__);
-
             log_android(ANDROID_LOG_ERROR, "tun %d read error %d: %s",
                         args->tun, errno, strerror(errno));
             if (errno == EINTR || errno == EAGAIN)
@@ -70,8 +50,8 @@ int check_tun(const struct arguments *args,
             }
         } else if (length > 0) {
             // Write pcap record
-            if (pcap_file != NULL)
-                write_pcap_rec(buffer, (size_t) length);
+//            if (pcap_file != NULL)
+//                write_pcap_rec(buffer, (size_t) length);
 
             if (length > max_tun_msg) {
                 max_tun_msg = length;
@@ -268,7 +248,6 @@ void handle_ip(const struct arguments *args,
         log_android(ANDROID_LOG_WARN, "Unknown protocol %d", protocol);
 
     flags[flen] = 0;
-
     // Limit number of sessions
     if (sessions >= maxsessions) {
         if ((protocol == IPPROTO_ICMP || protocol == IPPROTO_ICMPV6) ||
@@ -280,7 +259,6 @@ void handle_ip(const struct arguments *args,
             return;
         }
     }
-
     // Get uid
     jint uid = -1;
     if (protocol == IPPROTO_ICMP || protocol == IPPROTO_ICMPV6 ||

@@ -247,6 +247,7 @@ jboolean handle_udp(const struct arguments *args,
 
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
+    // convert numeric into IP
     if (version == 4) {
         inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
         inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
@@ -315,7 +316,7 @@ jboolean handle_udp(const struct arguments *args,
 
         s->next = args->ctx->ng_session;
         args->ctx->ng_session = s;
-
+        // add new session to the tail of linked
         cur = s;
     }
 

@@ -1,22 +1,3 @@
-/*
-    This file is part of NetGuard.
-
-    NetGuard is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    NetGuard is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with NetGuard.  If not, see <http://www.gnu.org/licenses/>.
-
-    Copyright 2015-2019 by Marcel Bokhorst (M66B)
-*/
-
 #include "netguard.h"
 
 void clear(struct context *ctx) {
@@ -52,8 +33,6 @@ void *handle_events(void *a) {
     }
 
     // Terminate existing sessions not allowed anymore
-    check_allowed(args);
-
     // Open epoll file
     int epoll_fd = epoll_create(1);
     if (epoll_fd < 0) {
@@ -97,6 +76,7 @@ void *handle_events(void *a) {
         int usessions = 0;
         int tsessions = 0;
         struct ng_session *s = args->ctx->ng_session;
+
         while (s != NULL) {
             if (s->protocol == IPPROTO_ICMP || s->protocol == IPPROTO_ICMPV6) {
                 if (!s->icmp.stop)
@@ -180,14 +160,14 @@ void *handle_events(void *a) {
         int ready = epoll_wait(epoll_fd, ev, EPOLL_EVENTS,
                                recheck ? EPOLL_MIN_CHECK : timeout * 1000);
 
+        // it has error
         if (ready < 0) {
             if (errno == EINTR) {
                 log_android(ANDROID_LOG_DEBUG, "epoll interrupted tun %d", args->tun);
                 continue;
             } else {
-                log_android(ANDROID_LOG_ERROR,
-                            "epoll tun %d error %d: %s",
-                            args->tun, errno, strerror(errno));
+                log_android(ANDROID_LOG_ERROR, "epoll tun %d error %d: %s", args->tun, errno,
+                            strerror(errno));
                 report_exit(args, "epoll tun %d error %d: %s",
                             args->tun, errno, strerror(errno));
                 break;
@@ -197,24 +177,23 @@ void *handle_events(void *a) {
         if (ready == 0)
             log_android(ANDROID_LOG_DEBUG, "epoll timeout");
         else {
-
             if (pthread_mutex_lock(&args->ctx->lock))
                 log_android(ANDROID_LOG_ERROR, "pthread_mutex_lock failed");
-
             int error = 0;
-
             for (int i = 0; i < ready; i++) {
+                // for stop event
                 if (ev[i].data.ptr == &ev_pipe) {
                     // Check pipe
                     uint8_t buffer[1];
                     if (read(args->ctx->pipefds[0], buffer, 1) < 0)
-                        log_android(ANDROID_LOG_WARN, "Read pipe error %d: %s",
-                                    errno, strerror(errno));
+                        log_android(ANDROID_LOG_WARN, "Read pipe error %d: %s", errno,
+                                    strerror(errno));
                     else
                         log_android(ANDROID_LOG_WARN, "Read pipe");
 
                 } else if (ev[i].data.ptr == NULL) {
                     // Check upstream
+                    // read tun interface
                     log_android(ANDROID_LOG_DEBUG, "epoll ready %d/%d in %d out %d err %d hup %d",
                                 i, ready,
                                 (ev[i].events & EPOLLIN) != 0,
@@ -232,6 +211,7 @@ void *handle_events(void *a) {
 
                 } else {
                     // Check downstream
+                    // write to tun interface
                     log_android(ANDROID_LOG_DEBUG,
                                 "epoll ready %d/%d in %d out %d err %d hup %d prot %d sock %d",
                                 i, ready,
@@ -280,91 +260,5 @@ void *handle_events(void *a) {
 
     log_android(ANDROID_LOG_WARN, "Stopped events tun=%d", args->tun);
     return NULL;
-}
-
-void check_allowed(const struct arguments *args) {
-    char source[INET6_ADDRSTRLEN + 1];
-    char dest[INET6_ADDRSTRLEN + 1];
-
-    struct ng_session *l = NULL;
-    struct ng_session *s = args->ctx->ng_session;
-    while (s != NULL) {
-        if (s->protocol == IPPROTO_ICMP || s->protocol == IPPROTO_ICMPV6) {
-            if (!s->icmp.stop) {
-                if (s->icmp.version == 4) {
-                    inet_ntop(AF_INET, &s->icmp.saddr.ip4, source, sizeof(source));
-                    inet_ntop(AF_INET, &s->icmp.daddr.ip4, dest, sizeof(dest));
-                } else {
-                    inet_ntop(AF_INET6, &s->icmp.saddr.ip6, source, sizeof(source));
-                    inet_ntop(AF_INET6, &s->icmp.daddr.ip6, dest, sizeof(dest));
-                }
-
-                jobject objPacket = create_packet(
-                        args, s->icmp.version, IPPROTO_ICMP, "",
-                        source, 0, dest, 0, "", s->icmp.uid, 0);
-                if (is_address_allowed(args, objPacket) == NULL) {
-                    s->icmp.stop = 1;
-                    log_android(ANDROID_LOG_WARN, "ICMP terminate %d uid %d",
-                                s->socket, s->icmp.uid);
-                }
-            }
-
-        } else if (s->protocol == IPPROTO_UDP) {
-            if (s->udp.state == UDP_ACTIVE) {
-                if (s->udp.version == 4) {
-                    inet_ntop(AF_INET, &s->udp.saddr.ip4, source, sizeof(source));
-                    inet_ntop(AF_INET, &s->udp.daddr.ip4, dest, sizeof(dest));
-                } else {
-                    inet_ntop(AF_INET6, &s->udp.saddr.ip6, source, sizeof(source));
-                    inet_ntop(AF_INET6, &s->udp.daddr.ip6, dest, sizeof(dest));
-                }
-
-                jobject objPacket = create_packet(
-                        args, s->udp.version, IPPROTO_UDP, "",
-                        source, ntohs(s->udp.source), dest, ntohs(s->udp.dest), "", s->udp.uid, 0);
-                if (is_address_allowed(args, objPacket) == NULL) {
-                    s->udp.state = UDP_FINISHING;
-                    log_android(ANDROID_LOG_WARN, "UDP terminate session socket %d uid %d",
-                                s->socket, s->udp.uid);
-                }
-            } else if (s->udp.state == UDP_BLOCKED) {
-                log_android(ANDROID_LOG_WARN, "UDP remove blocked session uid %d", s->udp.uid);
-
-                if (l == NULL)
-                    args->ctx->ng_session = s->next;
-                else
-                    l->next = s->next;
-
-                struct ng_session *c = s;
-                s = s->next;
-                ng_free(c, __FILE__, __LINE__);
-                continue;
-            }
-
-        } else if (s->protocol == IPPROTO_TCP) {
-            if (s->tcp.state != TCP_CLOSING && s->tcp.state != TCP_CLOSE) {
-                if (s->tcp.version == 4) {
-                    inet_ntop(AF_INET, &s->tcp.saddr.ip4, source, sizeof(source));
-                    inet_ntop(AF_INET, &s->tcp.daddr.ip4, dest, sizeof(dest));
-                } else {
-                    inet_ntop(AF_INET6, &s->tcp.saddr.ip6, source, sizeof(source));
-                    inet_ntop(AF_INET6, &s->tcp.daddr.ip6, dest, sizeof(dest));
-                }
-
-                jobject objPacket = create_packet(
-                        args, s->tcp.version, IPPROTO_TCP, "",
-                        source, ntohs(s->tcp.source), dest, ntohs(s->tcp.dest), "", s->tcp.uid, 0);
-                if (is_address_allowed(args, objPacket) == NULL) {
-                    write_rst(args, &s->tcp);
-                    log_android(ANDROID_LOG_WARN, "TCP terminate socket %d uid %d",
-                                s->socket, s->tcp.uid);
-                }
-            }
-
-        }
-
-        l = s;
-        s = s->next;
-    }
 }
 

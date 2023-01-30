@@ -1,0 +1,38 @@
+{
+  "buildFiles": [
+    "/Users/john/Desktop/Opensource/NetGuard/app/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/john/Library/Android/sdk/cmake/3.18.1/bin/ninja",
+      "-C",
+      "/Users/john/Desktop/Opensource/NetGuard/app/.cxx/Debug/2e4s5631/armeabi-v7a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/john/Library/Android/sdk/cmake/3.18.1/bin/ninja",
+    "-C",
+    "/Users/john/Desktop/Opensource/NetGuard/app/.cxx/Debug/2e4s5631/armeabi-v7a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "netguard::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "armeabi-v7a",
+      "artifactName": "netguard",
+      "output": "/Users/john/Desktop/Opensource/NetGuard/app/build/intermediates/cxx/Debug/2e4s5631/obj/armeabi-v7a/libnetguard.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/Users/john/Library/Android/sdk/ndk/23.1.7779620/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/Users/john/Library/Android/sdk/ndk/23.1.7779620/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [
+    "c"
+  ],
+  "cppFileExtensions": []
+}
