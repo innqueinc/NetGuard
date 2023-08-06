@@ -44,12 +44,12 @@ public class ReceiverAutostart extends BroadcastReceiver {
             // Start service
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
             if (prefs.getBoolean("enabled", false))
-                ServiceSinkhole.start("receiver", context);
+                LocalVPNService.start("receiver", context);
             else if (prefs.getBoolean("show_stats", false))
-                ServiceSinkhole.run("receiver", context);
+                LocalVPNService.run("receiver", context);
 
             if (Util.isInteractive(context))
-                ServiceSinkhole.reloadStats("receiver", context);
+                LocalVPNService.reloadStats("receiver", context);
         } catch (Throwable ex) {
             Log.e(TAG, ex.toString() + "\n" + Log.getStackTraceString(ex));
         }

@@ -826,7 +826,7 @@ public class Util {
                 for (String dns : getDefaultDNS(context))
                     sb.append("- ").append(dns).append("\r\n");
                 sb.append("DNS VPN:\r\n");
-                for (InetAddress dns : ServiceSinkhole.getDns(context))
+                for (InetAddress dns : LocalVPNService.getDns(context))
                     sb.append("- ").append(dns).append("\r\n");
                 sb.append("\r\n");
 
