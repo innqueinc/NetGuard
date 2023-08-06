@@ -23,6 +23,7 @@ import android.Manifest;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.app.AlertDialog;
 import android.app.ApplicationErrorReport;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -55,11 +56,8 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.TextView;
 
-import androidx.appcompat.app.AlertDialog;
-import androidx.core.net.ConnectivityManagerCompat;
 
-import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.GoogleApiAvailability;
+import androidx.core.net.ConnectivityManagerCompat;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -424,10 +422,7 @@ public class Util {
         }
     }
 
-    public static boolean hasPlayServices(Context context) {
-        GoogleApiAvailability api = GoogleApiAvailability.getInstance();
-        return (api.isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS);
-    }
+
 
     public static String getFingerprint(Context context) {
         try {
@@ -697,8 +692,8 @@ public class Util {
 
         if (tm.getSimState() == TelephonyManager.SIM_STATE_READY)
             sb.append(String.format("SIM %s/%s/%s\r\n", tm.getSimCountryIso(), tm.getSimOperatorName(), tm.getSimOperator()));
-        if (tm.getNetworkType() != TelephonyManager.NETWORK_TYPE_UNKNOWN)
-            sb.append(String.format("Network %s/%s/%s\r\n", tm.getNetworkCountryIso(), tm.getNetworkOperatorName(), tm.getNetworkOperator()));
+//        if (tm.getNetworkType() != TelephonyManager.NETWORK_TYPE_UNKNOWN)
+//            sb.append(String.format("Network %s/%s/%s\r\n", tm.getNetworkCountryIso(), tm.getNetworkOperatorName(), tm.getNetworkOperator()));
 
         PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
