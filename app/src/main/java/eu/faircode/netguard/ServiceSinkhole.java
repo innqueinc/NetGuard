@@ -87,12 +87,10 @@ public class ServiceSinkhole extends VpnService {
     private void connect() {
         int prio = Log.WARN;
         jni_start(jni_context, prio);
-
         thread = new Thread(() -> {
             Log.e(TAG, "connect: ");
             final int rcode = 3;
             jni_run(jni_context, vpn.getFd(), mapForward.containsKey(53), rcode);
-
         });
         thread.start();
     }
@@ -124,37 +122,44 @@ public class ServiceSinkhole extends VpnService {
         //build
         vpn = builder.establish();
     }
+
     // Called from native code
     private Allowed isAddressAllowed(Packet packet) {
         Allowed allowed = new Allowed();
         packet.allowed = true;
         return allowed;
     }
+
     // Called from native code
     private void accountUsage(Usage usage) {
+        Log.e(TAG, "accountUsage: " + usage);
     }
+
     // Called from native code
     private void nativeExit(String reason) {
         Log.e(TAG, "Native exit reason=" + reason);
     }// Called from native code
+
     private void nativeError(int error, String message) {
         Log.e(TAG, "Native error " + error + ": " + message);
     }
 
     // Called from native code
     private void logPacket(Packet packet) {
-
+        Log.e(TAG, "logPacket: " + packet.toString());
     }
 
     // Called from native code
     private void dnsResolved(ResourceRecord rr) {
-
+        Log.e(TAG, "dnsResolved: " + rr.toString());
     }
 
     // Called from native code
     private boolean isDomainBlocked(String name) {
+        Log.e(TAG, "isDomainBlocked: " + name);
         return false;
     }
+
     public static void start(Context context) {
         Intent intent = new Intent(context, ServiceSinkhole.class);
         intent.setAction(ACTION_CONNECT);
