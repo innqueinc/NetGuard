@@ -78,9 +78,11 @@ void JNI_OnUnload(JavaVM *vm, void *reserved) {
 JNIEXPORT jlong JNICALL
 Java_eu_faircode_netguard_ServiceSinkhole_jni_1init(
         JNIEnv *env, jobject instance, jint sdk) {
+
+    // create context
     struct context *ctx = calloc(1, sizeof(struct context));
 
-    loglevel = ANDROID_LOG_WARN;
+    loglevel = ANDROID_LOG_VERBOSE;
 
     *socks5_addr = 0;
     socks5_port = 0;
@@ -95,13 +97,13 @@ Java_eu_faircode_netguard_ServiceSinkhole_jni_1init(
     if (pipe(ctx->pipefds))
         log_android(ANDROID_LOG_ERROR, "Create pipe error %d: %s", errno, strerror(errno));
     else
+        // set to non blocking IO
         for (int i = 0; i < 2; i++) {
             int flags = fcntl(ctx->pipefds[i], F_GETFL, 0);
             if (flags < 0 || fcntl(ctx->pipefds[i], F_SETFL, flags | O_NONBLOCK) < 0)
                 log_android(ANDROID_LOG_ERROR, "fcntl pipefds[%d] O_NONBLOCK error %d: %s",
                             i, errno, strerror(errno));
         }
-
     return (jlong) ctx;
 }
 
@@ -121,17 +123,18 @@ Java_eu_faircode_netguard_ServiceSinkhole_jni_1start(
 JNIEXPORT void JNICALL
 Java_eu_faircode_netguard_ServiceSinkhole_jni_1run(
         JNIEnv *env, jobject instance, jlong context, jint tun, jboolean fwd53, jint rcode) {
+    // cast context
     struct context *ctx = (struct context *) context;
 
     log_android(ANDROID_LOG_WARN, "Running tun %d fwd53 %d level %d", tun, fwd53, loglevel);
 
-    // Set blocking
+    // Set to none blocking
     int flags = fcntl(tun, F_GETFL, 0);
     if (flags < 0 || fcntl(tun, F_SETFL, flags & ~O_NONBLOCK) < 0)
         log_android(ANDROID_LOG_ERROR, "fcntl tun ~O_NONBLOCK error %d: %s",
                     errno, strerror(errno));
 
-    // Get arguments
+    // create arguments
     struct arguments *args = malloc(sizeof(struct arguments));
     args->env = env;
     args->instance = instance;
