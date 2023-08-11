@@ -1,22 +1,3 @@
-/*
-    This file is part of NetGuard.
-
-    NetGuard is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    NetGuard is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with NetGuard.  If not, see <http://www.gnu.org/licenses/>.
-
-    Copyright 2015-2017 by Marcel Bokhorst (M66B)
-*/
-
 #include "netguard.h"
 
 extern FILE *pcap_file;
@@ -220,20 +201,26 @@ void block_udp(const struct arguments *args,
     args->ctx->ng_session = s;
 }
 
+// Function to handle and process UDP packets
 jboolean handle_udp(const struct arguments *args,
                     const uint8_t *pkt, size_t length,
                     const uint8_t *payload,
                     int uid, struct allowed *redirect,
                     const int epoll_fd) {
-    // Get headers
+    // Extract the IP version from the packet header
     const uint8_t version = (*pkt) >> 4;
+    // Cast the packet to IPv4 header
     const struct iphdr *ip4 = (struct iphdr *) pkt;
+    // Cast the packet to IPv6 header
     const struct ip6_hdr *ip6 = (struct ip6_hdr *) pkt;
+    // Cast the payload to UDP header to extract details
     const struct udphdr *udphdr = (struct udphdr *) payload;
+    // Calculate the start of the actual data after the UDP header
     const uint8_t *data = payload + sizeof(struct udphdr);
+    // Calculate the length of the actual data
     const size_t datalen = length - (data - pkt);
 
-    // Search session
+    // Search for an existing session that matches the current packet details
     struct ng_session *cur = args->ctx->ng_session;
     while (cur != NULL &&
            !(cur->protocol == IPPROTO_UDP &&
@@ -245,6 +232,7 @@ jboolean handle_udp(const struct arguments *args,
                              memcmp(&cur->udp.daddr.ip6, &ip6->ip6_dst, 16) == 0)))
         cur = cur->next;
 
+    // Convert the source and destination addresses to human-readable strings
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
     if (version == 4) {
@@ -254,36 +242,37 @@ jboolean handle_udp(const struct arguments *args,
         inet_ntop(AF_INET6, &ip6->ip6_src, source, sizeof(source));
         inet_ntop(AF_INET6, &ip6->ip6_dst, dest, sizeof(dest));
     }
-
+    // If the session exists and is not in an active state, log and ignore it
     if (cur != NULL && cur->udp.state != UDP_ACTIVE) {
         log_android(ANDROID_LOG_INFO, "UDP ignore session from %s/%u to %s/%u state %d",
                     source, ntohs(udphdr->source), dest, ntohs(udphdr->dest), cur->udp.state);
         return 0;
     }
 
-    // Create new session if needed
+    // If no matching session was found, create a new one
     if (cur == NULL) {
         log_android(ANDROID_LOG_INFO, "UDP new session from %s/%u to %s/%u",
                     source, ntohs(udphdr->source), dest, ntohs(udphdr->dest));
 
-        // Register session
+        // Allocate memory for the new session
         struct ng_session *s = malloc(sizeof(struct ng_session));
         s->protocol = IPPROTO_UDP;
-
+        // Initialize session details
         s->udp.time = time(NULL);
         s->udp.uid = uid;
         s->udp.version = version;
-
+        // Determine version for redirection (if applicable)
         int rversion;
         if (redirect == NULL)
             rversion = s->udp.version;
         else
             rversion = (strstr(redirect->raddr, ":") == NULL ? 4 : 6);
+        // Set the maximum segment size based on the IP version
         s->udp.mss = (uint16_t) (rversion == 4 ? UDP4_MAXMSG : UDP6_MAXMSG);
-
+        // Initialize byte counters
         s->udp.sent = 0;
         s->udp.received = 0;
-
+        // Store the source and destination addresses in the session
         if (version == 4) {
             s->udp.saddr.ip4 = (__be32) ip4->saddr;
             s->udp.daddr.ip4 = (__be32) ip4->daddr;
@@ -291,39 +280,40 @@ jboolean handle_udp(const struct arguments *args,
             memcpy(&s->udp.saddr.ip6, &ip6->ip6_src, 16);
             memcpy(&s->udp.daddr.ip6, &ip6->ip6_dst, 16);
         }
-
+        // Store source and destination ports in the session
         s->udp.source = udphdr->source;
         s->udp.dest = udphdr->dest;
+        // Set session state to active
         s->udp.state = UDP_ACTIVE;
         s->next = NULL;
 
-        // Open UDP socket
+        // Open a new UDP socket for this session
         s->socket = open_udp_socket(args, &s->udp, redirect);
         if (s->socket < 0) {
             free(s);
             return 0;
         }
-
+        // Open a new UDP socket for this session
         log_android(ANDROID_LOG_DEBUG, "UDP socket %d", s->socket);
 
-        // Monitor events
+        // Add the socket to epoll for monitoring events
         memset(&s->ev, 0, sizeof(struct epoll_event));
         s->ev.events = EPOLLIN | EPOLLERR;
         s->ev.data.ptr = s;
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, s->socket, &s->ev))
             log_android(ANDROID_LOG_ERROR, "epoll add udp error %d: %s", errno, strerror(errno));
-
+        // Link the new session to the list of sessions
         s->next = args->ctx->ng_session;
         args->ctx->ng_session = s;
-
         cur = s;
     }
 
-    // Check for DNS
+    // Check if the packet is a DNS query (port 53)
     if (ntohs(udphdr->dest) == 53) {
         char qname[DNS_QNAME_MAX + 1];
         uint16_t qtype;
         uint16_t qclass;
+        // Extract DNS query details
         if (get_dns_query(args, &cur->udp, data, datalen, &qtype, &qclass, qname) >= 0) {
             log_android(ANDROID_LOG_DEBUG,
                         "DNS query qtype %d qclass %d name %s",
@@ -331,7 +321,7 @@ jboolean handle_udp(const struct arguments *args,
 
             if (0)
                 if (check_domain(args, &cur->udp, data, datalen, qclass, qtype, qname)) {
-                    // Log qname
+                    // Log the DNS query name
                     char name[DNS_QNAME_MAX + 40 + 1];
                     sprintf(name, "qtype %d qname %s", qtype, qname);
                     jobject objPacket = create_packet(
@@ -340,24 +330,26 @@ jboolean handle_udp(const struct arguments *args,
                             name, 0, 0);
                     log_packet(args, objPacket);
 
-                    // Session done
+                    // If the domain check fails, set the session to finishing state and exit
                     cur->udp.state = UDP_FINISHING;
                     return 0;
                 }
         }
     }
 
-    // Check for DHCP (tethering)
+    // Check if the packet is a DHCP request or response (ports 67/68)
     if (ntohs(udphdr->source) == 68 || ntohs(udphdr->dest) == 67) {
         if (check_dhcp(args, &cur->udp, data, datalen) >= 0)
             return 1;
     }
-
+    // Log the details of the packet
     log_android(ANDROID_LOG_INFO, "UDP forward from tun %s/%u to %s/%u data %d",
                 source, ntohs(udphdr->source), dest, ntohs(udphdr->dest), datalen);
 
+    // Update the last seen timestamp for the session
     cur->udp.time = time(NULL);
 
+    // Determine the version for redirect (if any) and prepare the target address structure
     int rversion;
     struct sockaddr_in addr4;
     struct sockaddr_in6 addr6;
@@ -377,6 +369,7 @@ jboolean handle_udp(const struct arguments *args,
         log_android(ANDROID_LOG_WARN, "UDP%d redirect to %s/%u",
                     rversion, redirect->raddr, redirect->rport);
 
+        // Populate the target address based on redirect details
         if (rversion == 4) {
             addr4.sin_family = AF_INET;
             inet_pton(AF_INET, redirect->raddr, &addr4.sin_addr);
@@ -387,19 +380,20 @@ jboolean handle_udp(const struct arguments *args,
             addr6.sin6_port = htons(redirect->rport);
         }
     }
-
+    // Send the packet data to the target address
     if (sendto(cur->socket, data, (socklen_t) datalen, MSG_NOSIGNAL,
                (rversion == 4 ? (const struct sockaddr *) &addr4
                               : (const struct sockaddr *) &addr6),
                (socklen_t) (rversion == 4 ? sizeof(addr4) : sizeof(addr6))) != datalen) {
+        // Log an error if the send operation fails
         log_android(ANDROID_LOG_ERROR, "UDP sendto error %d: %s", errno, strerror(errno));
+        // If the error is not temporary, set the session state to finishing
         if (errno != EINTR && errno != EAGAIN) {
             cur->udp.state = UDP_FINISHING;
             return 0;
         }
     } else
-        cur->udp.sent += datalen;
-
+        cur->udp.sent += datalen;// Update byte counter for sent data
     return 1;
 }
 

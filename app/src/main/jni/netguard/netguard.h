@@ -87,8 +87,8 @@ struct arguments {
 };
 
 struct allowed {
-    char raddr[INET6_ADDRSTRLEN + 1];
-    uint16_t rport; // host notation
+    char raddr[INET6_ADDRSTRLEN + 1]; // The IP address of the remote endpoint.
+    uint16_t rport; // The port number of the remote endpoint.
 };
 
 struct segment {

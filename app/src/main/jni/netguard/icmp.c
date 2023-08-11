@@ -1,25 +1,4 @@
-/*
-    This file is part of NetGuard.
-
-    NetGuard is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    NetGuard is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with NetGuard.  If not, see <http://www.gnu.org/licenses/>.
-
-    Copyright 2015-2017 by Marcel Bokhorst (M66B)
-*/
-
 #include "netguard.h"
-
-extern FILE *pcap_file;
 
 int get_icmp_timeout(const struct icmp_session *u, int sessions, int maxsessions) {
     int timeout = ICMP_TIMEOUT;
@@ -141,20 +120,29 @@ void check_icmp_socket(const struct arguments *args, const struct epoll_event *e
     }
 }
 
+// Function to handle ICMP packets
 jboolean handle_icmp(const struct arguments *args,
                      const uint8_t *pkt, size_t length,
                      const uint8_t *payload,
                      int uid,
                      const int epoll_fd) {
-    // Get headers
+
+    // Determine IP version from the packet header (IPv4 or IPv6)
     const uint8_t version = (*pkt) >> 4;
+
+    // Cast packet data to IPv4 and IPv6 header structures
     const struct iphdr *ip4 = (struct iphdr *) pkt;
     const struct ip6_hdr *ip6 = (struct ip6_hdr *) pkt;
+    // Cast payload to ICMP structure
     struct icmp *icmp = (struct icmp *) payload;
+    // Calculate the length of the ICMP packet
     size_t icmplen = length - (payload - pkt);
 
+    // Buffer to store the source and destination IP addresses as strings
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
+
+    // Convert IP addresses to human-readable strings based on the IP version
     if (version == 4) {
         inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
         inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
@@ -163,13 +151,14 @@ jboolean handle_icmp(const struct arguments *args,
         inet_ntop(AF_INET6, &ip6->ip6_dst, dest, sizeof(dest));
     }
 
+    // Ignore ICMP packets other than echo requests (ping)
     if (icmp->icmp_type != ICMP_ECHO) {
         log_android(ANDROID_LOG_WARN, "ICMP type %d code %d from %s to %s not supported",
                     icmp->icmp_type, icmp->icmp_code, source, dest);
         return 0;
     }
 
-    // Search session
+    // Search for an existing session for this ICMP packet
     struct ng_session *cur = args->ctx->ng_session;
     while (cur != NULL &&
            !((cur->protocol == IPPROTO_ICMP || cur->protocol == IPPROTO_ICMPV6) &&
@@ -180,11 +169,11 @@ jboolean handle_icmp(const struct arguments *args,
                              memcmp(&cur->icmp.daddr.ip6, &ip6->ip6_dst, 16) == 0)))
         cur = cur->next;
 
-    // Create new session if needed
+    // If no session found, create a new one
     if (cur == NULL) {
         log_android(ANDROID_LOG_INFO, "ICMP new session from %s to %s", source, dest);
 
-        // Register session
+        // Allocate memory for the new session and initialize its values
         struct ng_session *s = malloc(sizeof(struct ng_session));
         s->protocol = (uint8_t) (version == 4 ? IPPROTO_ICMP : IPPROTO_ICMPV6);
 
@@ -192,6 +181,7 @@ jboolean handle_icmp(const struct arguments *args,
         s->icmp.uid = uid;
         s->icmp.version = version;
 
+        // Store IP addresses in the session
         if (version == 4) {
             s->icmp.saddr.ip4 = (__be32) ip4->saddr;
             s->icmp.daddr.ip4 = (__be32) ip4->daddr;
@@ -200,12 +190,13 @@ jboolean handle_icmp(const struct arguments *args,
             memcpy(&s->icmp.daddr.ip6, &ip6->ip6_dst, 16);
         }
 
+        // Store the original ICMP ID in the session
         s->icmp.id = icmp->icmp_id; // store original ID
 
         s->icmp.stop = 0;
         s->next = NULL;
 
-        // Open UDP socket
+        // Open a socket to handle ICMP traffic for this session
         s->socket = open_icmp_socket(args, &s->icmp);
         if (s->socket < 0) {
             free(s);
@@ -214,22 +205,23 @@ jboolean handle_icmp(const struct arguments *args,
 
         log_android(ANDROID_LOG_DEBUG, "ICMP socket %d id %x", s->socket, s->icmp.id);
 
-        // Monitor events
+        // Monitor socket events using epoll
         memset(&s->ev, 0, sizeof(struct epoll_event));
         s->ev.events = EPOLLIN | EPOLLERR;
         s->ev.data.ptr = s;
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, s->socket, &s->ev))
             log_android(ANDROID_LOG_ERROR, "epoll add icmp error %d: %s", errno, strerror(errno));
 
+        // Add the session to the list of sessions
         s->next = args->ctx->ng_session;
         args->ctx->ng_session = s;
-
         cur = s;
     }
 
-    // Modify ID
+    // Modify the ICMP ID for echo reply
     // http://lwn.net/Articles/443051/
     icmp->icmp_id = ~icmp->icmp_id;
+    // Calculate the checksum for IPv6 ICMP packets (this part is marked as untested)
     uint16_t csum = 0;
     if (version == 6) {
         // Untested
@@ -241,6 +233,7 @@ jboolean handle_icmp(const struct arguments *args,
         pseudo.ip6ph_nxt = ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
         csum = calc_checksum(0, (uint8_t *) &pseudo, sizeof(struct ip6_hdr_pseudo));
     }
+    // Recalculate the ICMP checksum
     icmp->icmp_cksum = 0;
     icmp->icmp_cksum = ~calc_checksum(csum, (uint8_t *) icmp, icmplen);
 
@@ -248,9 +241,9 @@ jboolean handle_icmp(const struct arguments *args,
                 "ICMP forward from tun %s to %s type %d code %d id %x seq %d data %d",
                 source, dest,
                 icmp->icmp_type, icmp->icmp_code, icmp->icmp_id, icmp->icmp_seq, icmplen);
-
+    // Update the last activity timestamp for this session
     cur->icmp.time = time(NULL);
-
+    // Prepare socket address structures to send the modified ICMP message
     struct sockaddr_in server4;
     struct sockaddr_in6 server6;
     if (version == 4) {
@@ -263,7 +256,7 @@ jboolean handle_icmp(const struct arguments *args,
         server6.sin6_port = 0;
     }
 
-    // Send raw ICMP message
+    // Send the modified ICMP message
     if (sendto(cur->socket, icmp, (socklen_t) icmplen, MSG_NOSIGNAL,
                (version == 4 ? (const struct sockaddr *) &server4
                              : (const struct sockaddr *) &server6),
@@ -355,13 +348,6 @@ ssize_t write_icmp(const struct arguments *args, const struct icmp_session *cur,
                 icmp->icmp_type, icmp->icmp_code, icmp->icmp_id, icmp->icmp_seq);
 
     ssize_t res = write(args->tun, buffer, len);
-
-    // Write PCAP record
-    if (res >= 0) {
-        if (pcap_file != NULL)
-            write_pcap_rec(buffer, (size_t) res);
-    } else
-        log_android(ANDROID_LOG_WARN, "ICMP write error %d: %s", errno, strerror(errno));
 
     free(buffer);
 

@@ -1,27 +1,7 @@
-/*
-    This file is part of NetGuard.
-
-    NetGuard is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    NetGuard is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with NetGuard.  If not, see <http://www.gnu.org/licenses/>.
-
-    Copyright 2015-2017 by Marcel Bokhorst (M66B)
-*/
-
 #include "netguard.h"
 
 int max_tun_msg = 0;
 extern int loglevel;
-extern FILE *pcap_file;
 
 uint16_t get_mtu() {
     return 10000;
@@ -69,18 +49,12 @@ int check_tun(const struct arguments *args,
                 return -1;
             }
         } else if (length > 0) {
-            // Write pcap record
-            if (pcap_file != NULL)
-                write_pcap_rec(buffer, (size_t) length);
-
             if (length > max_tun_msg) {
                 max_tun_msg = length;
                 log_android(ANDROID_LOG_WARN, "Maximum tun msg length %d", max_tun_msg);
             }
-
             // Handle IP from tun
             handle_ip(args, buffer, (size_t) length, epoll_fd, sessions, maxsessions);
-
             free(buffer);
         } else {
             // tun eof
@@ -120,44 +94,48 @@ void handle_ip(const struct arguments *args,
                const uint8_t *pkt, const size_t length,
                const int epoll_fd,
                int sessions, int maxsessions) {
+    // Initial variables
     uint8_t protocol;
-    void *saddr;
-    void *daddr;
-    char source[INET6_ADDRSTRLEN + 1];
-    char dest[INET6_ADDRSTRLEN + 1];
-    char flags[10];
-    int flen = 0;
-    uint8_t *payload;
+    void *saddr; // Source address pointer
+    void *daddr; // Destination address pointer
+    char source[INET6_ADDRSTRLEN + 1]; // Source address string representation
+    char dest[INET6_ADDRSTRLEN + 1]; // Destination address string representation
+    char flags[10]; // Flags for the protocol (e.g., TCP flags)
+    int flen = 0;  // Flags string length
+    uint8_t *payload; // Pointer to the payload of the IP packet
 
-    // Get protocol, addresses & payload
+    // Get the IP version by right-shifting
     uint8_t version = (*pkt) >> 4;
     if (version == 4) {
+        // Check if the packet length is at least the size of an IPv4 header
         if (length < sizeof(struct iphdr)) {
             log_android(ANDROID_LOG_WARN, "IP4 packet too short length %d", length);
             return;
         }
-
+        // Cast the packet to an IPv4 header structure for easier access to its fields
         struct iphdr *ip4hdr = (struct iphdr *) pkt;
-
+        // Extract the protocol type and addresses from the IPv4 header
         protocol = ip4hdr->protocol;
         saddr = &ip4hdr->saddr;
         daddr = &ip4hdr->daddr;
 
+        // Check for fragmented IPv4 packets
         if (ip4hdr->frag_off & IP_MF) {
             log_android(ANDROID_LOG_ERROR, "IP fragment offset %u",
                         (ip4hdr->frag_off & IP_OFFMASK) * 8);
             return;
         }
-
+        // Calculate IP options length and determine where the payload starts
         uint8_t ipoptlen = (uint8_t) ((ip4hdr->ihl - 5) * 4);
         payload = (uint8_t *) (pkt + sizeof(struct iphdr) + ipoptlen);
-
+        // Validate the total length field in the IPv4 header against the actual packet length
         if (ntohs(ip4hdr->tot_len) != length) {
             log_android(ANDROID_LOG_ERROR, "Invalid length %u header length %u",
                         length, ntohs(ip4hdr->tot_len));
             return;
         }
-
+        // todo comment this code
+        // If logging is enabled, check the checksum of the IPv4 header
         if (loglevel < ANDROID_LOG_WARN) {
             if (!calc_checksum(0, (uint8_t *) ip4hdr, sizeof(struct iphdr))) {
                 log_android(ANDROID_LOG_ERROR, "Invalid IP checksum");
@@ -165,6 +143,8 @@ void handle_ip(const struct arguments *args,
             }
         }
     } else if (version == 6) {
+        // todo comment this code
+        // Ensure the packet has sufficient length for an IPv6 header
         if (length < sizeof(struct ip6_hdr)) {
             log_android(ANDROID_LOG_WARN, "IP6 packet too short length %d", length);
             return;
@@ -175,10 +155,12 @@ void handle_ip(const struct arguments *args,
         // Skip extension headers
         uint16_t off = 0;
         protocol = ip6hdr->ip6_nxt;
+        // Continue if the protocol is not an upper-layer protocol (e.g., TCP, UDP, etc.)
         if (!is_upper_layer(protocol)) {
             log_android(ANDROID_LOG_WARN, "IP6 extension %d", protocol);
             off = sizeof(struct ip6_hdr);
             struct ip6_ext *ext = (struct ip6_ext *) (pkt + off);
+            // Loop through the extension headers until an upper-layer protocol is found
             while (is_lower_layer(ext->ip6e_nxt) && !is_upper_layer(protocol)) {
                 protocol = ext->ip6e_nxt;
                 log_android(ANDROID_LOG_WARN, "IP6 extension %d", protocol);
@@ -192,98 +174,104 @@ void handle_ip(const struct arguments *args,
                 log_android(ANDROID_LOG_WARN, "IP6 final extension %d", protocol);
             }
         }
-
         saddr = &ip6hdr->ip6_src;
         daddr = &ip6hdr->ip6_dst;
-
         payload = (uint8_t *) (pkt + sizeof(struct ip6_hdr) + off);
-
         // TODO checksum
     } else {
         log_android(ANDROID_LOG_ERROR, "Unknown version %d", version);
         return;
     }
 
+    // Convert the source and destination addresses to string format
     inet_ntop(version == 4 ? AF_INET : AF_INET6, saddr, source, sizeof(source));
     inet_ntop(version == 4 ? AF_INET : AF_INET6, daddr, dest, sizeof(dest));
 
-    // Get ports & flags
+    // Initialize variables for tracking protocol-specific details (e.g., ports, flags)
     int syn = 0;
     uint16_t sport = 0;
     uint16_t dport = 0;
+    // Handle ICMP or ICMPv6 packets
     if (protocol == IPPROTO_ICMP || protocol == IPPROTO_ICMPV6) {
         if (length - (payload - pkt) < sizeof(struct icmp)) {
             log_android(ANDROID_LOG_WARN, "ICMP packet too short");
             return;
         }
-
         struct icmp *icmp = (struct icmp *) payload;
-
         // http://lwn.net/Articles/443051/
+        // Extract ICMP identifiers as source and destination "ports" for logging/tracking
         sport = ntohs(icmp->icmp_id);
         dport = ntohs(icmp->icmp_id);
 
     } else if (protocol == IPPROTO_UDP) {
+        // Handle UDP packets
         if (length - (payload - pkt) < sizeof(struct udphdr)) {
             log_android(ANDROID_LOG_WARN, "UDP packet too short");
             return;
         }
 
         struct udphdr *udp = (struct udphdr *) payload;
-
+        // Extract source and destination ports from the UDP header
         sport = ntohs(udp->source);
         dport = ntohs(udp->dest);
-
         // TODO checksum (IPv6)
     } else if (protocol == IPPROTO_TCP) {
+        // Handle TCP packets
         if (length - (payload - pkt) < sizeof(struct tcphdr)) {
+            // Log a warning if the TCP packet is smaller than the expected TCP header size
             log_android(ANDROID_LOG_WARN, "TCP packet too short");
             return;
         }
-
+        // Cast the payload pointer to a TCP header structure for easier field access
         struct tcphdr *tcp = (struct tcphdr *) payload;
 
+        // Extract and convert the source and destination ports from network byte order to host byte order
         sport = ntohs(tcp->source);
         dport = ntohs(tcp->dest);
-
+        // Check TCP flags and set corresponding values/flags
         if (tcp->syn) {
-            syn = 1;
-            flags[flen++] = 'S';
+            syn = 1; // Mark that the SYN flag is set
+            flags[flen++] = 'S'; // Add 'S' to the flags string
         }
         if (tcp->ack)
-            flags[flen++] = 'A';
+            flags[flen++] = 'A'; // Add 'A' if the ACK flag is set
         if (tcp->psh)
-            flags[flen++] = 'P';
+            flags[flen++] = 'P'; // Add 'P' if the PSH flag is set
         if (tcp->fin)
-            flags[flen++] = 'F';
+            flags[flen++] = 'F'; // Add 'F' if the FIN flag is set
         if (tcp->rst)
-            flags[flen++] = 'R';
+            flags[flen++] = 'R'; // Add 'R' if the RST flag is set
 
+        // Placeholder for checksum validation, which is currently not implemented
         // TODO checksum
-    } else if (protocol != IPPROTO_HOPOPTS && protocol != IPPROTO_IGMP && protocol != IPPROTO_ESP)
+    } else if (protocol != IPPROTO_HOPOPTS && protocol != IPPROTO_IGMP && protocol != IPPROTO_ESP) {
+        // Log a warning if the encountered protocol is neither HOPOPTS, IGMP, nor ESP
         log_android(ANDROID_LOG_WARN, "Unknown protocol %d", protocol);
+    }
 
+    // Terminate the flags string
     flags[flen] = 0;
 
-    // Limit number of sessions
+    // Check if the number of current sessions has exceeded the maximum allowed sessions
     if (sessions >= maxsessions) {
+        // Drop the packet if it's a new session (SYN for TCP, or a new ICMP/UDP packet)
         if ((protocol == IPPROTO_ICMP || protocol == IPPROTO_ICMPV6) ||
             (protocol == IPPROTO_UDP && !has_udp_session(args, pkt, payload)) ||
             (protocol == IPPROTO_TCP && syn)) {
-            log_android(ANDROID_LOG_ERROR,
-                        "%d of max %d sessions, dropping version %d protocol %d",
+            log_android(ANDROID_LOG_ERROR, "%d of max %d sessions, dropping version %d protocol %d",
                         sessions, maxsessions, protocol, version);
-            return;
+            return; // Exit the function, effectively dropping the packet
         }
     }
 
-    // Get uid
+    // Retrieve the UID (User ID) of the app sending/receiving this packet
     jint uid = -1;
     if (protocol == IPPROTO_ICMP || protocol == IPPROTO_ICMPV6 ||
         (protocol == IPPROTO_UDP && !has_udp_session(args, pkt, payload)) ||
         (protocol == IPPROTO_TCP && syn))
         uid = get_uid(version, protocol, saddr, sport, daddr, dport);
 
+    // Log packet details
     log_android(ANDROID_LOG_DEBUG,
                 "Packet v%d %s/%u > %s/%u proto %d flags %s uid %d",
                 version, source, sport, dest, dport, protocol, flags, uid);
@@ -296,12 +284,13 @@ void handle_ip(const struct arguments *args,
     else if (protocol == IPPROTO_TCP && !syn)
         allowed = 1; // assume existing session
     else {
-        jobject objPacket = create_packet(
-                args, version, protocol, flags, source, sport, dest, dport, "", uid, 0);
-        redirect = is_address_allowed(args, objPacket);
-        allowed = (redirect != NULL);
+        // Create a packet object for address validation
+        jobject objPacket = create_packet(args, version, protocol, flags, source, sport, dest,
+                                          dport, "", uid, 0);
+        redirect = is_address_allowed(args, objPacket); // Check if the address is allowed
+        allowed = (redirect != NULL); // Mark as allowed if there's a redirect object
         if (redirect != NULL && (*redirect->raddr == 0 || redirect->rport == 0))
-            redirect = NULL;
+            redirect = NULL; // Reset redirect if it has invalid values
     }
 
     // Handle allowed traffic
@@ -313,13 +302,15 @@ void handle_ip(const struct arguments *args,
         else if (protocol == IPPROTO_TCP)
             handle_tcp(args, pkt, length, payload, uid, allowed, redirect, epoll_fd);
     } else {
+        // Handle blocked traffic
         if (protocol == IPPROTO_UDP)
             block_udp(args, pkt, length, payload, uid);
         if (protocol == IPPROTO_TCP)
             handle_tcp(args, pkt, length, payload, uid, allowed, redirect, epoll_fd);
 
-        log_android(ANDROID_LOG_WARN, "Address v%d p%d %s/%u syn %d not allowed",
-                    version, protocol, dest, dport, syn);
+        // Log a warning that the packet was not allowed
+        log_android(ANDROID_LOG_WARN, "Address v%d p%d %s/%u syn %d not allowed", version, protocol,
+                    dest, dport, syn);
     }
 }
 

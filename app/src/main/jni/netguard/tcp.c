@@ -1,22 +1,3 @@
-/*
-    This file is part of NetGuard.
-
-    NetGuard is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    NetGuard is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with NetGuard.  If not, see <http://www.gnu.org/licenses/>.
-
-    Copyright 2015-2017 by Marcel Bokhorst (M66B)
-*/
-
 #include "netguard.h"
 
 extern char socks5_addr[INET6_ADDRSTRLEN + 1];
@@ -593,23 +574,30 @@ void check_tcp_socket(const struct arguments *args,
         s->tcp.remote_seq != oldremote)
         log_android(ANDROID_LOG_DEBUG, "%s new state", session);
 }
-
+// Function to handle and process TCP packets
 jboolean handle_tcp(const struct arguments *args,
                     const uint8_t *pkt, size_t length,
                     const uint8_t *payload,
                     int uid, int allowed, struct allowed *redirect,
                     const int epoll_fd) {
-    // Get headers
+    // Extract the IP version from the packet header
     const uint8_t version = (*pkt) >> 4;
+    // Cast the packet to IPv4 header for processing
     const struct iphdr *ip4 = (struct iphdr *) pkt;
+    // Cast the packet to IPv6 header for processing
     const struct ip6_hdr *ip6 = (struct ip6_hdr *) pkt;
+    // Cast the payload to TCP header to extract details
     const struct tcphdr *tcphdr = (struct tcphdr *) payload;
+    // Calculate TCP option length
     const uint8_t tcpoptlen = (uint8_t) ((tcphdr->doff - 5) * 4);
+    // Determine the start of TCP options within the packet
     const uint8_t *tcpoptions = payload + sizeof(struct tcphdr);
+    // Calculate the start of the actual data after the TCP header and options
     const uint8_t *data = payload + sizeof(struct tcphdr) + tcpoptlen;
+    // Calculate the length of the actual data
     const uint16_t datalen = (const uint16_t) (length - (data - pkt));
 
-    // Search session
+    // Search for an existing session that matches the current packet details
     struct ng_session *cur = args->ctx->ng_session;
     while (cur != NULL &&
            !(cur->protocol == IPPROTO_TCP &&
@@ -621,7 +609,7 @@ jboolean handle_tcp(const struct arguments *args,
                              memcmp(&cur->tcp.daddr.ip6, &ip6->ip6_dst, 16) == 0)))
         cur = cur->next;
 
-    // Prepare logging
+    // Prepare logging by converting the source and destination IP addresses to human-readable strings
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
     if (version == 4) {
@@ -631,7 +619,7 @@ jboolean handle_tcp(const struct arguments *args,
         inet_ntop(AF_INET6, &ip6->ip6_src, source, sizeof(source));
         inet_ntop(AF_INET6, &ip6->ip6_dst, dest, sizeof(dest));
     }
-
+    // Prepare a string to represent the TCP flags for logging purposes
     char flags[10];
     int flen = 0;
     if (tcphdr->syn)
@@ -647,7 +635,7 @@ jboolean handle_tcp(const struct arguments *args,
     if (tcphdr->urg)
         flags[flen++] = 'U';
     flags[flen] = 0;
-
+    // Create a detailed logging string for this TCP packet
     char packet[250];
     sprintf(packet,
             "TCP %s %s/%u > %s/%u seq %u ack %u data %u win %u uid %d",
@@ -657,16 +645,17 @@ jboolean handle_tcp(const struct arguments *args,
             ntohl(tcphdr->seq) - (cur == NULL ? 0 : cur->tcp.remote_start),
             tcphdr->ack ? ntohl(tcphdr->ack_seq) - (cur == NULL ? 0 : cur->tcp.local_start) : 0,
             datalen, ntohs(tcphdr->window), uid);
+    // Log the packet details
     log_android(tcphdr->urg ? ANDROID_LOG_WARN : ANDROID_LOG_DEBUG, packet);
 
-    // Drop URG data
+    // If the URG flag is set, drop the data and return
     if (tcphdr->urg)
         return 1;
 
-    // Check session
+    // Check if a session exists for the current packet
     if (cur == NULL) {
         if (tcphdr->syn) {
-            // Decode options
+            // Decode and extract TCP options
             // http://www.iana.org/assignments/tcp-parameters/tcp-parameters.xhtml#tcp-parameters-1
             uint16_t mss = get_default_mss(version);
             uint8_t ws = 0;
@@ -692,11 +681,11 @@ jboolean handle_tcp(const struct arguments *args,
                     options += len;
                 }
             }
-
+            // Log the new session details
             log_android(ANDROID_LOG_WARN, "%s new session mss %u ws %u window %u",
                         packet, mss, ws, ntohs(tcphdr->window) << ws);
 
-            // Register session
+            // Create and initialize a new session for this TCP connection
             struct ng_session *s = malloc(sizeof(struct ng_session));
             s->protocol = IPPROTO_TCP;
 
@@ -730,7 +719,7 @@ jboolean handle_tcp(const struct arguments *args,
             s->tcp.socks5 = SOCKS5_NONE;
             s->tcp.forward = NULL;
             s->next = NULL;
-
+            // If there's data in the SYN packet, queue it for forwarding
             if (datalen) {
                 log_android(ANDROID_LOG_WARN, "%s SYN data", packet);
                 s->tcp.forward = malloc(sizeof(struct segment));
@@ -743,37 +732,38 @@ jboolean handle_tcp(const struct arguments *args,
                 s->tcp.forward->next = NULL;
             }
 
-            // Open socket
+            // Open a socket for this new session
             s->socket = open_tcp_socket(args, &s->tcp, redirect);
             if (s->socket < 0) {
-                // Remote might retry
+                // If socket opening fails, remote might retry
                 free(s);
                 return 0;
             }
 
             s->tcp.recv_window = get_receive_window(s);
-
+            // Log the socket details
             log_android(ANDROID_LOG_DEBUG, "TCP socket %d lport %d",
                         s->socket, get_local_port(s->socket));
 
-            // Monitor events
+            // Monitor the socket for events using epoll
             memset(&s->ev, 0, sizeof(struct epoll_event));
             s->ev.events = EPOLLOUT | EPOLLERR;
             s->ev.data.ptr = s;
             if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, s->socket, &s->ev))
                 log_android(ANDROID_LOG_ERROR, "epoll add tcp error %d: %s",
                             errno, strerror(errno));
-
+            // Link the new session to the list of active sessions
             s->next = args->ctx->ng_session;
             args->ctx->ng_session = s;
-
+            // If the packet is not allowed, send a reset
             if (!allowed) {
                 log_android(ANDROID_LOG_WARN, "%s resetting blocked session", packet);
                 write_rst(args, &s->tcp);
             }
         } else {
+            // If no session is found and the packet isn't a SYN, log it as unknown
             log_android(ANDROID_LOG_WARN, "%s unknown session", packet);
-
+            // Create a temporary session to send a reset to the remote endpoint
             struct tcp_session rst;
             memset(&rst, 0, sizeof(struct tcp_session));
             rst.version = 4;
@@ -790,11 +780,12 @@ jboolean handle_tcp(const struct arguments *args,
 
             rst.source = tcphdr->source;
             rst.dest = tcphdr->dest;
-
+            // Send a reset for this unknown session
             write_rst(args, &rst);
             return 0;
         }
     } else {
+        // If a session is found, process the packet and update the session state accordingly
         char session[250];
         sprintf(session,
                 "%s %s loc %u rem %u acked %u",
@@ -804,8 +795,9 @@ jboolean handle_tcp(const struct arguments *args,
                 cur->tcp.remote_seq - cur->tcp.remote_start,
                 cur->tcp.acked - cur->tcp.local_start);
 
-        // Session found
+        // Check the current session state
         if (cur->tcp.state == TCP_CLOSING || cur->tcp.state == TCP_CLOSE) {
+            // If the session is in a closed or closing state, send a reset
             log_android(ANDROID_LOG_WARN, "%s was closed", session);
             write_rst(args, &cur->tcp);
             return 0;
@@ -815,7 +807,7 @@ jboolean handle_tcp(const struct arguments *args,
             uint32_t oldremote = cur->tcp.remote_seq;
 
             log_android(ANDROID_LOG_DEBUG, "%s handling", session);
-
+            // Update the session's last activity timestamp and advertised window size
             cur->tcp.time = time(NULL);
             cur->tcp.send_window = ntohs(tcphdr->window) << cur->tcp.send_scale;
 
@@ -835,9 +827,10 @@ jboolean handle_tcp(const struct arguments *args,
                 }
                 queue_tcp(args, tcphdr, session, &cur->tcp, data, datalen);
             }
-
+            // Process the TCP packet flags and update the session state accordingly
+            // Note: the order of these checks is critical for correct behavior
             if (tcphdr->rst /* +ACK */) {
-                // No sequence check
+                // If the RST flag is set, mark the session as closing
                 // http://tools.ietf.org/html/rfc1122#page-87
                 log_android(ANDROID_LOG_WARN, "%s received reset", session);
                 cur->tcp.state = TCP_CLOSING;
@@ -845,10 +838,11 @@ jboolean handle_tcp(const struct arguments *args,
             } else {
                 if (!tcphdr->ack || ntohl(tcphdr->ack_seq) == cur->tcp.local_seq) {
                     if (tcphdr->syn) {
+                        // If a SYN is received for an existing session, it's a repeated SYN
                         log_android(ANDROID_LOG_WARN, "%s repeated SYN", session);
-                        // The socket is probably not opened yet
-
+                        // The socket might not be opened yet
                     } else if (tcphdr->fin /* +ACK */) {
+                        // Handle the FIN flag based on the current session state
                         if (cur->tcp.state == TCP_ESTABLISHED) {
                             log_android(ANDROID_LOG_WARN, "%s FIN received", session);
                             if (cur->tcp.forward == NULL) {
@@ -859,7 +853,7 @@ jboolean handle_tcp(const struct arguments *args,
                                 cur->tcp.state = TCP_CLOSE_WAIT;
                         } else if (cur->tcp.state == TCP_CLOSE_WAIT) {
                             log_android(ANDROID_LOG_WARN, "%s repeated FIN", session);
-                            // The socket is probably not closed yet
+                            // The socket might not be closed yet
                         } else if (cur->tcp.state == TCP_FIN_WAIT1) {
                             log_android(ANDROID_LOG_WARN, "%s last ACK", session);
                             cur->tcp.remote_seq++; // remote FIN
@@ -871,6 +865,7 @@ jboolean handle_tcp(const struct arguments *args,
                         }
 
                     } else if (tcphdr->ack) {
+                        // Handle the ACK flag and update the session state
                         cur->tcp.acked = ntohl(tcphdr->ack_seq);
 
                         if (cur->tcp.state == TCP_SYN_RECV)
@@ -894,6 +889,7 @@ jboolean handle_tcp(const struct arguments *args,
                         return 0;
                     }
                 } else {
+                    // Handle out-of-order or unexpected ACKs
                     uint32_t ack = ntohl(tcphdr->ack_seq);
                     if ((uint32_t) (ack + 1) == cur->tcp.local_seq) {
                         // Keep alive
@@ -930,7 +926,7 @@ jboolean handle_tcp(const struct arguments *args,
                     }
                 }
             }
-
+            // Log changes in session state or sequence numbers
             if (cur->tcp.state != oldstate ||
                 cur->tcp.local_seq != oldlocal ||
                 cur->tcp.remote_seq != oldremote)
