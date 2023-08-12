@@ -1,36 +1,39 @@
 #include "netguard.h"
 
-extern FILE *pcap_file;
-
+// Function to get the timeout for a given UDP session.
 int get_udp_timeout(const struct udp_session *u, int sessions, int maxsessions) {
+    // Determine the timeout based on the destination port. If it's port 53 (DNS), use a specific timeout; otherwise, use a default timeout.
     int timeout = (ntohs(u->dest) == 53 ? UDP_TIMEOUT_53 : UDP_TIMEOUT_ANY);
-
+    // Adjust the timeout based on the current number of sessions relative to the maximum allowed sessions.
     int scale = 100 - sessions * 100 / maxsessions;
     timeout = timeout * scale / 100;
-
+    // Return the calculated timeout.
     return timeout;
 }
 
+// Function to check the state and timeouts of a given UDP session.
 int check_udp_session(const struct arguments *args, struct ng_session *s,
                       int sessions, int maxsessions) {
+    // Get the current time.
     time_t now = time(NULL);
-
+    // Buffers to store the source and destination IP addresses as strings.
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
+    // Convert the IP addresses from binary to string format.
     inet_ntop(AF_INET, &s->udp.saddr.ip4, source, sizeof(source));
     inet_ntop(AF_INET, &s->udp.daddr.ip4, dest, sizeof(dest));
 
 
-    // Check session timeout
+    // Calculate the timeout for the session.
     int timeout = get_udp_timeout(&s->udp, sessions, maxsessions);
+    // If the session is active and has exceeded its timeout, log and update its state to finishing.
     if (s->udp.state == UDP_ACTIVE && s->udp.time + timeout < now) {
         log_android(ANDROID_LOG_WARN, "UDP idle %d/%d sec state %d from %s/%u to %s/%u",
                     now - s->udp.time, timeout, s->udp.state,
                     source, ntohs(s->udp.source), dest, ntohs(s->udp.dest));
         s->udp.state = UDP_FINISHING;
     }
-
-    // Check finished sessions
+    // If the session is in the finishing state, close its socket and update its state to closed.
     if (s->udp.state == UDP_FINISHING) {
         log_android(ANDROID_LOG_INFO, "UDP close from %s/%u to %s/%u socket %d",
                     source, ntohs(s->udp.source), dest, ntohs(s->udp.dest), s->socket);
@@ -43,7 +46,7 @@ int check_udp_session(const struct arguments *args, struct ng_session *s,
         s->udp.time = time(NULL);
         s->udp.state = UDP_CLOSED;
     }
-
+    // If the session is closed and there's data sent or received, account for the data usage.
     if (s->udp.state == UDP_CLOSED && (s->udp.sent || s->udp.received)) {
         account_usage(args, s->udp.version, IPPROTO_UDP,
                       dest, ntohs(s->udp.dest), s->udp.uid, s->udp.sent, s->udp.received);
@@ -51,7 +54,7 @@ int check_udp_session(const struct arguments *args, struct ng_session *s,
         s->udp.received = 0;
     }
 
-    // Cleanup lingering sessions
+    // Remove sessions that are lingering for too long.
     if ((s->udp.state == UDP_CLOSED || s->udp.state == UDP_BLOCKED) &&
         s->udp.time + UDP_KEEP_TIMEOUT < now)
         return 1;
@@ -59,13 +62,15 @@ int check_udp_session(const struct arguments *args, struct ng_session *s,
     return 0;
 }
 
+// Function to check the state of the UDP socket and handle any events.
 void check_udp_socket(const struct arguments *args, const struct epoll_event *ev) {
+    // Extract the session from the epoll event.
     struct ng_session *s = (struct ng_session *) ev->data.ptr;
 
-    // Check socket error
+    // If there's an error on the socket, handle it.
     if (ev->events & EPOLLERR) {
         s->udp.time = time(NULL);
-
+        // Fetch the socket error.
         int serr = 0;
         socklen_t optlen = sizeof(int);
         int err = getsockopt(s->socket, SOL_SOCKET, SO_ERROR, &serr, &optlen);
@@ -74,67 +79,66 @@ void check_udp_socket(const struct arguments *args, const struct epoll_event *ev
                         errno, strerror(errno));
         else if (serr)
             log_android(ANDROID_LOG_ERROR, "UDP SO_ERROR %d: %s", serr, strerror(serr));
-
+        // Set the session state to finishing due to the error.
         s->udp.state = UDP_FINISHING;
     } else {
-        // Check socket read
+        // If there's data available to read on the socket, handle it.
         if (ev->events & EPOLLIN) {
             s->udp.time = time(NULL);
-
+            // Allocate a buffer for reading data.
             uint8_t *buffer = malloc(s->udp.mss);
             ssize_t bytes = recv(s->socket, buffer, s->udp.mss, 0);
             if (bytes < 0) {
-                // Socket error
+                // Handle socket read errors.
                 log_android(ANDROID_LOG_WARN, "UDP recv error %d: %s",
                             errno, strerror(errno));
-
+                // If the error is not due to an interrupted call or try again, set the session to finishing.
                 if (errno != EINTR && errno != EAGAIN)
                     s->udp.state = UDP_FINISHING;
             } else if (bytes == 0) {
+                // Handle end of file on the socket.
                 log_android(ANDROID_LOG_WARN, "UDP recv eof");
                 s->udp.state = UDP_FINISHING;
 
             } else {
-                // Socket read data
+                // Process the received data.
                 char dest[INET6_ADDRSTRLEN + 1];
-                if (s->udp.version == 4)
-                    inet_ntop(AF_INET, &s->udp.daddr.ip4, dest, sizeof(dest));
-                else
-                    inet_ntop(AF_INET6, &s->udp.daddr.ip6, dest, sizeof(dest));
+                inet_ntop(AF_INET, &s->udp.daddr.ip4, dest, sizeof(dest));
                 log_android(ANDROID_LOG_INFO, "UDP recv bytes %d from %s/%u for tun",
                             bytes, dest, ntohs(s->udp.dest));
-
+                // Update the total bytes received for the session.
                 s->udp.received += bytes;
 
-                // Process DNS response
+                // If the data is a DNS response, parse it.
                 if (ntohs(s->udp.dest) == 53)
                     parse_dns_response(args, &s->udp, buffer, (size_t *) &bytes);
 
-                // Forward to tun
+                // Forward the data to the TUN interface.
                 if (write_udp(args, &s->udp, buffer, (size_t) bytes) < 0)
                     s->udp.state = UDP_FINISHING;
                 else {
-                    // Prevent too many open files
+                    // If the data is a DNS query, set the session to finishing to prevent too many open files.
                     if (ntohs(s->udp.dest) == 53)
                         s->udp.state = UDP_FINISHING;
                 }
             }
+            // Free the allocated buffer.
             free(buffer);
         }
     }
 }
-
+// Function to check if there's an existing UDP session for the given packet.
 int has_udp_session(const struct arguments *args, const uint8_t *pkt, const uint8_t *payload) {
-    // Get headers
+    // Extract the version (IPv4 or IPv6) from the packet and get the UDP header from the payload.
     const uint8_t version = (*pkt) >> 4;
     const struct iphdr *ip4 = (struct iphdr *) pkt;
     const struct ip6_hdr *ip6 = (struct ip6_hdr *) pkt;
     const struct udphdr *udphdr = (struct udphdr *) payload;
-
+    // If the destination port is 53 (DNS) and DNS forwarding is disabled, return true.
     if (ntohs(udphdr->dest) == 53 && !args->fwd53)
         return 1;
 
-    // Search session
+    // Search for a matching session in the list.
     struct ng_session *cur = args->ctx->ng_session;
     while (cur != NULL &&
            !(cur->protocol == IPPROTO_UDP &&
@@ -145,46 +149,42 @@ int has_udp_session(const struct arguments *args, const uint8_t *pkt, const uint
                            : memcmp(&cur->udp.saddr.ip6, &ip6->ip6_src, 16) == 0 &&
                              memcmp(&cur->udp.daddr.ip6, &ip6->ip6_dst, 16) == 0)))
         cur = cur->next;
-
+    // Return true if a matching session is found, false otherwise.
     return (cur != NULL);
 }
-
+// Function to block a given UDP session based on its packet details.
 void block_udp(const struct arguments *args,
                const uint8_t *pkt, size_t length,
                const uint8_t *payload,
                int uid) {
-    // Get headers
+    // Extract the version (IPv4 or IPv6) from the packet and get the UDP header from the payload.
     const uint8_t version = (*pkt) >> 4;
     const struct iphdr *ip4 = (struct iphdr *) pkt;
     const struct ip6_hdr *ip6 = (struct ip6_hdr *) pkt;
     const struct udphdr *udphdr = (struct udphdr *) payload;
-
+    // Buffers to store the source and destination IP addresses as strings.
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
+    // Convert the IP addresses from binary to string format.
     inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
     inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
-
-
+    // Log the details of the blocked session.
     log_android(ANDROID_LOG_INFO, "UDP blocked session from %s/%u to %s/%u",
                 source, ntohs(udphdr->source), dest, ntohs(udphdr->dest));
 
-    // Register session
+    // Allocate memory for a new session and set its details.
     struct ng_session *s = malloc(sizeof(struct ng_session));
     s->protocol = IPPROTO_UDP;
-
     s->udp.time = time(NULL);
     s->udp.uid = uid;
     s->udp.version = version;
-
     s->udp.saddr.ip4 = (__be32) ip4->saddr;
     s->udp.daddr.ip4 = (__be32) ip4->daddr;
-
-
     s->udp.source = udphdr->source;
     s->udp.dest = udphdr->dest;
     s->udp.state = UDP_BLOCKED;
     s->socket = -1;
-
+    // Add the new session to the beginning of the session list.
     s->next = args->ctx->ng_session;
     args->ctx->ng_session = s;
 }
@@ -377,85 +377,73 @@ jboolean handle_udp(const struct arguments *args,
     return 1;
 }
 
+// This function opens a UDP socket based on the session and any redirection rules.
 int open_udp_socket(const struct arguments *args,
                     const struct udp_session *cur, const struct allowed *redirect) {
     int sock;
     int version;
+    // Determine the IP version for the socket (either IPv4 or IPv6) based on the redirection rule.
     if (redirect == NULL)
         version = cur->version;
     else
         version = (strstr(redirect->raddr, ":") == NULL ? 4 : 6);
 
-    // Get UDP socket
-    sock = socket(version == 4 ? PF_INET : PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    // Create a UDP socket
+    sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) {
+        // Log if there's an error creating the socket.
         log_android(ANDROID_LOG_ERROR, "UDP socket error %d: %s", errno, strerror(errno));
         return -1;
     }
 
-    // Protect socket
+    // Protect the socket from being routed back into the VPN.
     if (protect_socket(args, sock) < 0)
         return -1;
 
-    // Check for broadcast/multicast
+    // Check if the destination address is a broadcast or multicast address.
     if (cur->version == 4) {
         uint32_t broadcast4 = INADDR_BROADCAST;
         if (memcmp(&cur->daddr.ip4, &broadcast4, sizeof(broadcast4)) == 0) {
             log_android(ANDROID_LOG_WARN, "UDP4 broadcast");
             int on = 1;
+            // Allow broadcasting on the socket.
             if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on)))
                 log_android(ANDROID_LOG_ERROR, "UDP setsockopt SO_BROADCAST error %d: %s",
                             errno, strerror(errno));
         }
     } else {
-        // http://man7.org/linux/man-pages/man7/ipv6.7.html
-        if (*((uint8_t *) &cur->daddr.ip6) == 0xFF) {
-            log_android(ANDROID_LOG_WARN, "UDP6 broadcast");
 
-            int loop = 1; // true
-            if (setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &loop, sizeof(loop)))
-                log_android(ANDROID_LOG_ERROR,
-                            "UDP setsockopt IPV6_MULTICAST_LOOP error %d: %s",
-                            errno, strerror(errno));
-
-            int ttl = -1; // route default
-            if (setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &ttl, sizeof(ttl)))
-                log_android(ANDROID_LOG_ERROR,
-                            "UDP setsockopt IPV6_MULTICAST_HOPS error %d: %s",
-                            errno, strerror(errno));
-
-            struct ipv6_mreq mreq6;
-            memcpy(&mreq6.ipv6mr_multiaddr, &cur->daddr.ip6, sizeof(struct in6_addr));
-            mreq6.ipv6mr_interface = INADDR_ANY;
-            if (setsockopt(sock, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &mreq6, sizeof(mreq6)))
-                log_android(ANDROID_LOG_ERROR,
-                            "UDP setsockopt IPV6_ADD_MEMBERSHIP error %d: %s",
-                            errno, strerror(errno));
-        }
     }
-
+    // Return the created socket.
     return sock;
 }
 
+// This function sends UDP data to the TUN interface.
 ssize_t write_udp(const struct arguments *args, const struct udp_session *cur,
                   uint8_t *data, size_t datalen) {
     size_t len;
     u_int8_t *buffer;
     struct udphdr *udp;
     uint16_t csum;
+
+    // Buffer to store source and destination IP addresses in string format.
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
 
-    // Build packet
+    // Construct an IP packet with an embedded UDP packet.
     if (cur->version == 4) {
+        // Calculate the total length for the IPv4 packet.
         len = sizeof(struct iphdr) + sizeof(struct udphdr) + datalen;
+        // Allocate memory for the packet.
         buffer = malloc(len);
+        // Cast the beginning of the buffer to an IPv4 header.
         struct iphdr *ip4 = (struct iphdr *) buffer;
         udp = (struct udphdr *) (buffer + sizeof(struct iphdr));
+        // If there's data, copy it after the UDP header.
         if (datalen)
             memcpy(buffer + sizeof(struct iphdr) + sizeof(struct udphdr), data, datalen);
 
-        // Build IP4 header
+        // Set up the IPv4 header.
         memset(ip4, 0, sizeof(struct iphdr));
         ip4->version = 4;
         ip4->ihl = sizeof(struct iphdr) >> 2;
@@ -465,87 +453,49 @@ ssize_t write_udp(const struct arguments *args, const struct udp_session *cur,
         ip4->saddr = cur->daddr.ip4;
         ip4->daddr = cur->saddr.ip4;
 
-        // Calculate IP4 checksum
+        // Compute the checksum for the IPv4 header.
         ip4->check = ~calc_checksum(0, (uint8_t *) ip4, sizeof(struct iphdr));
 
-        // Calculate UDP4 checksum
+        // Prepare the structure for UDP checksum computation for IPv4.
         struct ippseudo pseudo;
         memset(&pseudo, 0, sizeof(struct ippseudo));
         pseudo.ippseudo_src.s_addr = (__be32) ip4->saddr;
         pseudo.ippseudo_dst.s_addr = (__be32) ip4->daddr;
         pseudo.ippseudo_p = ip4->protocol;
         pseudo.ippseudo_len = htons(sizeof(struct udphdr) + datalen);
-
+        // Compute the initial part of the checksum using the pseudo-header.
         csum = calc_checksum(0, (uint8_t *) &pseudo, sizeof(struct ippseudo));
     } else {
-        len = sizeof(struct ip6_hdr) + sizeof(struct udphdr) + datalen;
-        buffer = malloc(len);
-        struct ip6_hdr *ip6 = (struct ip6_hdr *) buffer;
-        udp = (struct udphdr *) (buffer + sizeof(struct ip6_hdr));
-        if (datalen)
-            memcpy(buffer + sizeof(struct ip6_hdr) + sizeof(struct udphdr), data, datalen);
 
-        // Build IP6 header
-        memset(ip6, 0, sizeof(struct ip6_hdr));
-        ip6->ip6_ctlun.ip6_un1.ip6_un1_flow = 0;
-        ip6->ip6_ctlun.ip6_un1.ip6_un1_plen = htons(len - sizeof(struct ip6_hdr));
-        ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_UDP;
-        ip6->ip6_ctlun.ip6_un1.ip6_un1_hlim = IPDEFTTL;
-        ip6->ip6_ctlun.ip6_un2_vfc = IPV6_VERSION;
-        memcpy(&(ip6->ip6_src), &cur->daddr.ip6, 16);
-        memcpy(&(ip6->ip6_dst), &cur->saddr.ip6, 16);
-
-        // Calculate UDP6 checksum
-        struct ip6_hdr_pseudo pseudo;
-        memset(&pseudo, 0, sizeof(struct ip6_hdr_pseudo));
-        memcpy(&pseudo.ip6ph_src, &ip6->ip6_dst, 16);
-        memcpy(&pseudo.ip6ph_dst, &ip6->ip6_src, 16);
-        pseudo.ip6ph_len = ip6->ip6_ctlun.ip6_un1.ip6_un1_plen;
-        pseudo.ip6ph_nxt = ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
-
-        csum = calc_checksum(0, (uint8_t *) &pseudo, sizeof(struct ip6_hdr_pseudo));
     }
 
-    // Build UDP header
+    // Set up the UDP header.
     memset(udp, 0, sizeof(struct udphdr));
     udp->source = cur->dest;
     udp->dest = cur->source;
     udp->len = htons(sizeof(struct udphdr) + datalen);
 
-    // Continue checksum
+    // Compute the final checksum using UDP header and data.
     csum = calc_checksum(csum, (uint8_t *) udp, sizeof(struct udphdr));
     csum = calc_checksum(csum, data, datalen);
     udp->check = ~csum;
+    // Convert source and destination IP addresses to string for logging.
+    inet_ntop(AF_INET, (const void *) &cur->saddr.ip4, source, sizeof(source));
+    inet_ntop(AF_INET, (const void *) &cur->daddr.ip4, dest, sizeof(dest));
 
-    inet_ntop(cur->version == 4 ? AF_INET : AF_INET6,
-              (cur->version == 4 ? (const void *) &cur->saddr.ip4 : (const void *) &cur->saddr.ip6),
-              source,
-              sizeof(source));
-    inet_ntop(cur->version == 4 ? AF_INET : AF_INET6,
-              (cur->version == 4 ? (const void *) &cur->daddr.ip4 : (const void *) &cur->daddr.ip6),
-              dest,
-              sizeof(dest));
-
-    // Send packet
+    // Log the details of the packet being sent to TUN.
     log_android(ANDROID_LOG_DEBUG,
                 "UDP sending to tun %d from %s/%u to %s/%u data %u",
                 args->tun, dest, ntohs(cur->dest), source, ntohs(cur->source), len);
-
+    // Send the constructed packet to the TUN interface.
     ssize_t res = write(args->tun, buffer, len);
 
-    // Write PCAP record
-    if (res >= 0) {
-        if (pcap_file != NULL)
-            write_pcap_rec(buffer, (size_t) res);
-    } else
-        log_android(ANDROID_LOG_WARN, "UDP write error %d: %s", errno, strerror(errno));
-
+    // Free the allocated buffer.
     free(buffer);
-
+    // Log if the number of bytes written doesn't match the expected length.
     if (res != len) {
         log_android(ANDROID_LOG_ERROR, "write %d/%d", res, len);
         return -1;
     }
-
     return res;
 }

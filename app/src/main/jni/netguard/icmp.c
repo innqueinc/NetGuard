@@ -9,70 +9,81 @@ int get_icmp_timeout(const struct icmp_session *u, int sessions, int maxsessions
     return timeout;
 }
 
+// Function to check the ICMP session for activity and determine if it should be closed
 int check_icmp_session(const struct arguments *args, struct ng_session *s,
                        int sessions, int maxsessions) {
+    // Get the current time
     time_t now = time(NULL);
-
+    // Calculate the timeout for the ICMP session based on current sessions and max sessions
     int timeout = get_icmp_timeout(&s->icmp, sessions, maxsessions);
+    // Check if the ICMP session has been inactive longer than its timeout or if it should be stopped
     if (s->icmp.stop || s->icmp.time + timeout < now) {
+        // Convert the source and destination IP addresses from binary to text format for logging
         char source[INET6_ADDRSTRLEN + 1];
         char dest[INET6_ADDRSTRLEN + 1];
         inet_ntop(AF_INET, &s->icmp.saddr.ip4, source, sizeof(source));
         inet_ntop(AF_INET, &s->icmp.daddr.ip4, dest, sizeof(dest));
-
+        // Log the inactivity details of the ICMP session
         log_android(ANDROID_LOG_WARN, "ICMP idle %d/%d sec stop %d from %s to %s",
                     now - s->icmp.time, timeout, s->icmp.stop, dest, source);
-
+        // Close the socket associated with the ICMP session
         if (close(s->socket))
             log_android(ANDROID_LOG_ERROR, "ICMP close %d error %d: %s",
                         s->socket, errno, strerror(errno));
+        // Set the session's socket descriptor to an invalid value
         s->socket = -1;
-
+        // Return 1 indicating that the session should be removed
         return 1;
     }
-
+    // Return 0 indicating that the session is still active and should not be removed
     return 0;
 }
 
 void check_icmp_socket(const struct arguments *args, const struct epoll_event *ev) {
+    // Convert the data pointer from the epoll event to an ICMP session structure
     struct ng_session *s = (struct ng_session *) ev->data.ptr;
-
-    // Check socket error
+    // Check for errors on the socket
     if (ev->events & EPOLLERR) {
+        // Update the last activity timestamp of the ICMP session
         s->icmp.time = time(NULL);
 
         int serr = 0;
         socklen_t optlen = sizeof(int);
+        // Get and check the error status on the socket
         int err = getsockopt(s->socket, SOL_SOCKET, SO_ERROR, &serr, &optlen);
         if (err < 0)
+            // Log if there's an error fetching the socket status
             log_android(ANDROID_LOG_ERROR, "ICMP getsockopt error %d: %s",
                         errno, strerror(errno));
         else if (serr)
+            // Log the socket error status
             log_android(ANDROID_LOG_ERROR, "ICMP SO_ERROR %d: %s",
                         serr, strerror(serr));
-
+        // Flag the ICMP session to be stopped due to the error
         s->icmp.stop = 1;
     } else {
-        // Check socket read
+        // Check if there's data available to read on the socket
         if (ev->events & EPOLLIN) {
+            // Update the last activity timestamp of the ICMP session
             s->icmp.time = time(NULL);
-
-            uint16_t blen = (uint16_t) (s->icmp.version == 4 ? ICMP4_MAXMSG : ICMP6_MAXMSG);
+            // Allocate a buffer to read the data
+            uint16_t blen = (uint16_t) ICMP4_MAXMSG;
             uint8_t *buffer = malloc(blen);
+            // Receive the data from the socket
             ssize_t bytes = recv(s->socket, buffer, blen, 0);
             if (bytes < 0) {
-                // Socket error
+                // Log the error if reading from the socket fails
                 log_android(ANDROID_LOG_WARN, "ICMP recv error %d: %s",
                             errno, strerror(errno));
-
+                // Check if the error isn't temporary and flag the session to be stopped
                 if (errno != EINTR && errno != EAGAIN)
                     s->icmp.stop = 1;
             } else if (bytes == 0) {
+                // Log if the socket has reached end-of-file (remote side closed connection)
                 log_android(ANDROID_LOG_WARN, "ICMP recv eof");
                 s->icmp.stop = 1;
-
             } else {
-                // Socket read data
+                // Convert the destination IP address from binary to text format for logging
                 char dest[INET6_ADDRSTRLEN + 1];
                 if (s->icmp.version == 4)
                     inet_ntop(AF_INET, &s->icmp.daddr.ip4, dest, sizeof(dest));
@@ -82,7 +93,9 @@ void check_icmp_socket(const struct arguments *args, const struct epoll_event *e
                 // cur->id should be equal to icmp->icmp_id
                 // but for some unexplained reason this is not the case
                 // some bits seems to be set extra
+                // Extract ICMP details from the received buffer
                 struct icmp *icmp = (struct icmp *) buffer;
+                // Log the details of the received ICMP packet
                 log_android(
                         s->icmp.id == icmp->icmp_id ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
                         "ICMP recv bytes %d from %s for tun type %d code %d id %x/%x seq %d",
@@ -90,16 +103,18 @@ void check_icmp_socket(const struct arguments *args, const struct epoll_event *e
                         icmp->icmp_type, icmp->icmp_code,
                         s->icmp.id, icmp->icmp_id, icmp->icmp_seq);
 
-                // restore original ID
+                // Restore the original ICMP ID in the packet
                 icmp->icmp_id = s->icmp.id;
                 uint16_t csum = 0;
                 icmp->icmp_cksum = 0;
+                // Recalculate the checksum for the ICMP packet
                 icmp->icmp_cksum = ~calc_checksum(csum, buffer, (size_t) bytes);
 
-                // Forward to tun
+                // Forward the ICMP packet to the tun interface
                 if (write_icmp(args, &s->icmp, buffer, (size_t) bytes) < 0)
                     s->icmp.stop = 1;
             }
+            // Free the allocated buffer
             free(buffer);
         }
     }
