@@ -15,55 +15,62 @@ void clear(struct context *ctx) {
     }
     ctx->ng_session = NULL;
 }
-
+// Thread function to handle epoll events
 void *handle_events(void *a) {
+    // Convert the passed argument to its correct structure type
     struct arguments *args = (struct arguments *) a;
+    // Log the start of event handling for the given TUN interface
     log_android(ANDROID_LOG_WARN, "Start events tun=%d", args->tun);
 
-    // Get max number of sessions
+    // Define the maximum number of sessions
     int maxsessions = SESSION_MAX;
     struct rlimit rlim;
-    // get resources limit
+    // Get the resource limits for the process
     if (getrlimit(RLIMIT_NOFILE, &rlim))
         log_android(ANDROID_LOG_WARN, "getrlimit error %d: %s", errno, strerror(errno));
     else {
+        // Calculate the max sessions based on resource limits
         maxsessions = (int) (rlim.rlim_cur * SESSION_LIMIT / 100);
         if (maxsessions > SESSION_MAX)
             maxsessions = SESSION_MAX;
+        // Log the resource limits and calculated maximum sessions
         log_android(ANDROID_LOG_WARN, "getrlimit soft %d hard %d max sessions %d",
                     rlim.rlim_cur, rlim.rlim_max, maxsessions);
     }
-    // Open epoll file
+    // Create an epoll instance to monitor multiple file descriptors
     int epoll_fd = epoll_create(1);
     if (epoll_fd < 0) {
+        // Log and report if there's an error creating the epoll instance
         log_android(ANDROID_LOG_ERROR, "epoll create error %d: %s", errno, strerror(errno));
         report_exit(args, "epoll create error %d: %s", errno, strerror(errno));
         args->ctx->stopping = 1;
     }
 
-    // Monitor stop events from pipe fd
+    // Configure epoll to monitor stop events from the pipe file descriptor
     struct epoll_event ev_pipe;
     memset(&ev_pipe, 0, sizeof(struct epoll_event));
     ev_pipe.events = EPOLLIN | EPOLLERR;
     ev_pipe.data.ptr = &ev_pipe;
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, args->ctx->pipefds[0], &ev_pipe)) {
+        // Log and report if there's an error adding the pipe to the epoll instance
         log_android(ANDROID_LOG_ERROR, "epoll add pipe error %d: %s", errno, strerror(errno));
         report_exit(args, "epoll add pipe error %d: %s", errno, strerror(errno));
         args->ctx->stopping = 1;
     }
 
-    // Monitor tun events
+    // Configure epoll to monitor events from the TUN interface
     struct epoll_event ev_tun;
     memset(&ev_tun, 0, sizeof(struct epoll_event));
     ev_tun.events = EPOLLIN | EPOLLERR;
     ev_tun.data.ptr = NULL;
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, args->tun, &ev_tun)) {
+        // Log and report if there's an error adding the TUN interface to the epoll instance
         log_android(ANDROID_LOG_ERROR, "epoll add tun error %d: %s", errno, strerror(errno));
         report_exit(args, "epoll add tun error %d: %s", errno, strerror(errno));
         args->ctx->stopping = 1;
     }
 
-    // Loop
+    // Main loop for event handling
     long long last_check = 0;
     while (!args->ctx->stopping) {
         log_android(ANDROID_LOG_DEBUG, "Loop");
@@ -71,14 +78,14 @@ void *handle_events(void *a) {
         int recheck = 0;
         int timeout = EPOLL_TIMEOUT;
 
-        // Count sessions
+        // Initialize session counters
         int isessions = 0;
         int usessions = 0;
         int tsessions = 0;
         struct ng_session *s = args->ctx->ng_session;
-        // for each all session
+        // Iterate over all sessions to count active ones
         while (s != NULL) {
-            if (s->protocol == IPPROTO_ICMP || s->protocol == IPPROTO_ICMPV6) {
+            if (s->protocol == IPPROTO_ICMP) {
                 if (!s->icmp.stop)
                     isessions++;
             } else if (s->protocol == IPPROTO_UDP) {
@@ -92,11 +99,11 @@ void *handle_events(void *a) {
             }
             s = s->next;
         }
-        // add all sessions
+        // Calculate total active sessions
         int sessions = isessions + usessions + tsessions;
 
-        // Check inactive sessions
-        long long ms = get_ms(); // get the current time in milliseconds
+        // Check inactive sessions based on time
+        long long ms = get_ms(); // Get the current time in milliseconds
         if (ms - last_check > EPOLL_MIN_CHECK) {
             last_check = ms;
 
@@ -105,7 +112,7 @@ void *handle_events(void *a) {
             s = args->ctx->ng_session;
             while (s != NULL) {
                 int del = 0;
-                if (s->protocol == IPPROTO_ICMP || s->protocol == IPPROTO_ICMPV6) {
+                if (s->protocol == IPPROTO_ICMP) {
                     del = check_icmp_session(args, s, sessions, maxsessions);
                     if (!s->icmp.stop && !del) {
                         int stimeout = s->icmp.time +
@@ -130,7 +137,7 @@ void *handle_events(void *a) {
                             timeout = stimeout;
                     }
                 }
-
+                // Remove the session if flagged for deletion
                 if (del) {
                     if (sl == NULL)
                         args->ctx->ng_session = s->next;
@@ -156,11 +163,11 @@ void *handle_events(void *a) {
                     "sessions ICMP %d UDP %d TCP %d max %d/%d timeout %d recheck %d",
                     isessions, usessions, tsessions, sessions, maxsessions, timeout, recheck);
 
-        // Poll
+        // Use epoll to wait for events on monitored file descriptors
         struct epoll_event ev[EPOLL_EVENTS];
         int ready = epoll_wait(epoll_fd, ev, EPOLL_EVENTS,
                                recheck ? EPOLL_MIN_CHECK : timeout * 1000);
-
+        // Handle errors or interruptions from epoll_wait
         if (ready < 0) {
             if (errno == EINTR) {
                 log_android(ANDROID_LOG_DEBUG, "epoll interrupted tun %d", args->tun);
@@ -178,16 +185,17 @@ void *handle_events(void *a) {
         if (ready == 0)
             log_android(ANDROID_LOG_DEBUG, "epoll timeout");
         else {
-
+            // todo try to delete pthread mutex
+            // Lock mutex to ensure safe concurrent access
             if (pthread_mutex_lock(&args->ctx->lock))
                 log_android(ANDROID_LOG_ERROR, "pthread_mutex_lock failed");
 
             int error = 0;
-            // read all file descriptors
+            // Process all the events returned by epoll_wait
             for (int i = 0; i < ready; i++) {
 
                 if (ev[i].data.ptr == &ev_pipe) {
-                    // Check pipe
+                    // Handle events from the pipe
                     uint8_t buffer[1];
                     if (read(args->ctx->pipefds[0], buffer, 1) < 0)
                         log_android(ANDROID_LOG_WARN, "Read pipe error %d: %s",
@@ -197,6 +205,7 @@ void *handle_events(void *a) {
 
                 } else if (ev[i].data.ptr == NULL) {
                     // Check upstream
+                    // Handle events from the TUN interface
                     log_android(ANDROID_LOG_DEBUG, "epoll ready %d/%d in %d out %d err %d hup %d",
                                 i, ready,
                                 (ev[i].events & EPOLLIN) != 0,
@@ -210,6 +219,7 @@ void *handle_events(void *a) {
 
                 } else {
                     // Check downstream
+                    // Handle events from downstream sockets (ICMP/UDP/TCP)
                     log_android(ANDROID_LOG_DEBUG,
                                 "epoll ready %d/%d in %d out %d err %d hup %d prot %d sock %d",
                                 i, ready,
@@ -221,8 +231,7 @@ void *handle_events(void *a) {
                                 ((struct ng_session *) ev[i].data.ptr)->socket);
 
                     struct ng_session *session = (struct ng_session *) ev[i].data.ptr;
-                    if (session->protocol == IPPROTO_ICMP ||
-                        session->protocol == IPPROTO_ICMPV6)
+                    if (session->protocol == IPPROTO_ICMP)
                         check_icmp_socket(args, &ev[i]);
                     else if (session->protocol == IPPROTO_UDP) {
                         while (!(ev[i].events & EPOLLERR) && (ev[i].events & EPOLLIN) &&
@@ -235,7 +244,8 @@ void *handle_events(void *a) {
                 if (error)
                     break;
             }
-
+            // todo try to remove the pthread mutex
+            // Unlock mutex after processing events
             if (pthread_mutex_unlock(&args->ctx->lock))
                 log_android(ANDROID_LOG_ERROR, "pthread_mutex_unlock failed");
 

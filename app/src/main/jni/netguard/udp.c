@@ -17,13 +17,9 @@ int check_udp_session(const struct arguments *args, struct ng_session *s,
 
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
-    if (s->udp.version == 4) {
-        inet_ntop(AF_INET, &s->udp.saddr.ip4, source, sizeof(source));
-        inet_ntop(AF_INET, &s->udp.daddr.ip4, dest, sizeof(dest));
-    } else {
-        inet_ntop(AF_INET6, &s->udp.saddr.ip6, source, sizeof(source));
-        inet_ntop(AF_INET6, &s->udp.daddr.ip6, dest, sizeof(dest));
-    }
+    inet_ntop(AF_INET, &s->udp.saddr.ip4, source, sizeof(source));
+    inet_ntop(AF_INET, &s->udp.daddr.ip4, dest, sizeof(dest));
+
 
     // Check session timeout
     int timeout = get_udp_timeout(&s->udp, sessions, maxsessions);
@@ -165,13 +161,9 @@ void block_udp(const struct arguments *args,
 
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
-    if (version == 4) {
-        inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
-        inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
-    } else {
-        inet_ntop(AF_INET6, &ip6->ip6_src, source, sizeof(source));
-        inet_ntop(AF_INET6, &ip6->ip6_dst, dest, sizeof(dest));
-    }
+    inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
+    inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
+
 
     log_android(ANDROID_LOG_INFO, "UDP blocked session from %s/%u to %s/%u",
                 source, ntohs(udphdr->source), dest, ntohs(udphdr->dest));
@@ -184,13 +176,9 @@ void block_udp(const struct arguments *args,
     s->udp.uid = uid;
     s->udp.version = version;
 
-    if (version == 4) {
-        s->udp.saddr.ip4 = (__be32) ip4->saddr;
-        s->udp.daddr.ip4 = (__be32) ip4->daddr;
-    } else {
-        memcpy(&s->udp.saddr.ip6, &ip6->ip6_src, 16);
-        memcpy(&s->udp.daddr.ip6, &ip6->ip6_dst, 16);
-    }
+    s->udp.saddr.ip4 = (__be32) ip4->saddr;
+    s->udp.daddr.ip4 = (__be32) ip4->daddr;
+
 
     s->udp.source = udphdr->source;
     s->udp.dest = udphdr->dest;
@@ -235,13 +223,9 @@ jboolean handle_udp(const struct arguments *args,
     // Convert the source and destination addresses to human-readable strings
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
-    if (version == 4) {
-        inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
-        inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
-    } else {
-        inet_ntop(AF_INET6, &ip6->ip6_src, source, sizeof(source));
-        inet_ntop(AF_INET6, &ip6->ip6_dst, dest, sizeof(dest));
-    }
+    inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
+    inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
+
     // If the session exists and is not in an active state, log and ignore it
     if (cur != NULL && cur->udp.state != UDP_ACTIVE) {
         log_android(ANDROID_LOG_INFO, "UDP ignore session from %s/%u to %s/%u state %d",
@@ -273,13 +257,9 @@ jboolean handle_udp(const struct arguments *args,
         s->udp.sent = 0;
         s->udp.received = 0;
         // Store the source and destination addresses in the session
-        if (version == 4) {
-            s->udp.saddr.ip4 = (__be32) ip4->saddr;
-            s->udp.daddr.ip4 = (__be32) ip4->daddr;
-        } else {
-            memcpy(&s->udp.saddr.ip6, &ip6->ip6_src, 16);
-            memcpy(&s->udp.daddr.ip6, &ip6->ip6_dst, 16);
-        }
+        s->udp.saddr.ip4 = (__be32) ip4->saddr;
+        s->udp.daddr.ip4 = (__be32) ip4->daddr;
+
         // Store source and destination ports in the session
         s->udp.source = udphdr->source;
         s->udp.dest = udphdr->dest;

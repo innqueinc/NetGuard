@@ -17,13 +17,9 @@ int check_icmp_session(const struct arguments *args, struct ng_session *s,
     if (s->icmp.stop || s->icmp.time + timeout < now) {
         char source[INET6_ADDRSTRLEN + 1];
         char dest[INET6_ADDRSTRLEN + 1];
-        if (s->icmp.version == 4) {
-            inet_ntop(AF_INET, &s->icmp.saddr.ip4, source, sizeof(source));
-            inet_ntop(AF_INET, &s->icmp.daddr.ip4, dest, sizeof(dest));
-        } else {
-            inet_ntop(AF_INET6, &s->icmp.saddr.ip6, source, sizeof(source));
-            inet_ntop(AF_INET6, &s->icmp.daddr.ip6, dest, sizeof(dest));
-        }
+        inet_ntop(AF_INET, &s->icmp.saddr.ip4, source, sizeof(source));
+        inet_ntop(AF_INET, &s->icmp.daddr.ip4, dest, sizeof(dest));
+
         log_android(ANDROID_LOG_WARN, "ICMP idle %d/%d sec stop %d from %s to %s",
                     now - s->icmp.time, timeout, s->icmp.stop, dest, source);
 
@@ -97,17 +93,6 @@ void check_icmp_socket(const struct arguments *args, const struct epoll_event *e
                 // restore original ID
                 icmp->icmp_id = s->icmp.id;
                 uint16_t csum = 0;
-                if (s->icmp.version == 6) {
-                    // Untested
-                    struct ip6_hdr_pseudo pseudo;
-                    memset(&pseudo, 0, sizeof(struct ip6_hdr_pseudo));
-                    memcpy(&pseudo.ip6ph_src, &s->icmp.daddr.ip6, 16);
-                    memcpy(&pseudo.ip6ph_dst, &s->icmp.saddr.ip6, 16);
-                    pseudo.ip6ph_len = bytes - sizeof(struct ip6_hdr);
-                    pseudo.ip6ph_nxt = IPPROTO_ICMPV6;
-                    csum = calc_checksum(
-                            0, (uint8_t *) &pseudo, sizeof(struct ip6_hdr_pseudo));
-                }
                 icmp->icmp_cksum = 0;
                 icmp->icmp_cksum = ~calc_checksum(csum, buffer, (size_t) bytes);
 
@@ -143,13 +128,9 @@ jboolean handle_icmp(const struct arguments *args,
     char dest[INET6_ADDRSTRLEN + 1];
 
     // Convert IP addresses to human-readable strings based on the IP version
-    if (version == 4) {
-        inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
-        inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
-    } else {
-        inet_ntop(AF_INET6, &ip6->ip6_src, source, sizeof(source));
-        inet_ntop(AF_INET6, &ip6->ip6_dst, dest, sizeof(dest));
-    }
+    inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
+    inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
+
 
     // Ignore ICMP packets other than echo requests (ping)
     if (icmp->icmp_type != ICMP_ECHO) {
@@ -172,7 +153,6 @@ jboolean handle_icmp(const struct arguments *args,
     // If no session found, create a new one
     if (cur == NULL) {
         log_android(ANDROID_LOG_INFO, "ICMP new session from %s to %s", source, dest);
-
         // Allocate memory for the new session and initialize its values
         struct ng_session *s = malloc(sizeof(struct ng_session));
         s->protocol = (uint8_t) (version == 4 ? IPPROTO_ICMP : IPPROTO_ICMPV6);
@@ -182,13 +162,8 @@ jboolean handle_icmp(const struct arguments *args,
         s->icmp.version = version;
 
         // Store IP addresses in the session
-        if (version == 4) {
-            s->icmp.saddr.ip4 = (__be32) ip4->saddr;
-            s->icmp.daddr.ip4 = (__be32) ip4->daddr;
-        } else {
-            memcpy(&s->icmp.saddr.ip6, &ip6->ip6_src, 16);
-            memcpy(&s->icmp.daddr.ip6, &ip6->ip6_dst, 16);
-        }
+        s->icmp.saddr.ip4 = (__be32) ip4->saddr;
+        s->icmp.daddr.ip4 = (__be32) ip4->daddr;
 
         // Store the original ICMP ID in the session
         s->icmp.id = icmp->icmp_id; // store original ID
@@ -223,16 +198,6 @@ jboolean handle_icmp(const struct arguments *args,
     icmp->icmp_id = ~icmp->icmp_id;
     // Calculate the checksum for IPv6 ICMP packets (this part is marked as untested)
     uint16_t csum = 0;
-    if (version == 6) {
-        // Untested
-        struct ip6_hdr_pseudo pseudo;
-        memset(&pseudo, 0, sizeof(struct ip6_hdr_pseudo));
-        memcpy(&pseudo.ip6ph_src, &ip6->ip6_dst, 16);
-        memcpy(&pseudo.ip6ph_dst, &ip6->ip6_src, 16);
-        pseudo.ip6ph_len = ip6->ip6_ctlun.ip6_un1.ip6_un1_plen;
-        pseudo.ip6ph_nxt = ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
-        csum = calc_checksum(0, (uint8_t *) &pseudo, sizeof(struct ip6_hdr_pseudo));
-    }
     // Recalculate the ICMP checksum
     icmp->icmp_cksum = 0;
     icmp->icmp_cksum = ~calc_checksum(csum, (uint8_t *) icmp, icmplen);
@@ -246,15 +211,10 @@ jboolean handle_icmp(const struct arguments *args,
     // Prepare socket address structures to send the modified ICMP message
     struct sockaddr_in server4;
     struct sockaddr_in6 server6;
-    if (version == 4) {
-        server4.sin_family = AF_INET;
-        server4.sin_addr.s_addr = (__be32) ip4->daddr;
-        server4.sin_port = 0;
-    } else {
-        server6.sin6_family = AF_INET6;
-        memcpy(&server6.sin6_addr, &ip6->ip6_dst, 16);
-        server6.sin6_port = 0;
-    }
+    server4.sin_family = AF_INET;
+    server4.sin_addr.s_addr = (__be32) ip4->daddr;
+    server4.sin_port = 0;
+
 
     // Send the modified ICMP message
     if (sendto(cur->socket, icmp, (socklen_t) icmplen, MSG_NOSIGNAL,
@@ -317,21 +277,7 @@ ssize_t write_icmp(const struct arguments *args, const struct icmp_session *cur,
         // Calculate IP4 checksum
         ip4->check = ~calc_checksum(0, (uint8_t *) ip4, sizeof(struct iphdr));
     } else {
-        len = sizeof(struct ip6_hdr) + datalen;
-        buffer = malloc(len);
-        struct ip6_hdr *ip6 = (struct ip6_hdr *) buffer;
-        if (datalen)
-            memcpy(buffer + sizeof(struct ip6_hdr), data, datalen);
 
-        // Build IP6 header
-        memset(ip6, 0, sizeof(struct ip6_hdr));
-        ip6->ip6_ctlun.ip6_un1.ip6_un1_flow = 0;
-        ip6->ip6_ctlun.ip6_un1.ip6_un1_plen = htons(len - sizeof(struct ip6_hdr));
-        ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_ICMPV6;
-        ip6->ip6_ctlun.ip6_un1.ip6_un1_hlim = IPDEFTTL;
-        ip6->ip6_ctlun.ip6_un2_vfc = IPV6_VERSION;
-        memcpy(&(ip6->ip6_src), &cur->daddr.ip6, 16);
-        memcpy(&(ip6->ip6_dst), &cur->saddr.ip6, 16);
     }
 
     inet_ntop(cur->version == 4 ? AF_INET : AF_INET6,

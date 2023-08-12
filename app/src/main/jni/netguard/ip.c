@@ -83,12 +83,6 @@ int is_lower_layer(int protocol) {
             protocol == 135); // Mobility
 }
 
-int is_upper_layer(int protocol) {
-    return (protocol == IPPROTO_TCP ||
-            protocol == IPPROTO_UDP ||
-            protocol == IPPROTO_ICMP ||
-            protocol == IPPROTO_ICMPV6);
-}
 
 void handle_ip(const struct arguments *args,
                const uint8_t *pkt, const size_t length,
@@ -143,56 +137,22 @@ void handle_ip(const struct arguments *args,
             }
         }
     } else if (version == 6) {
-        // todo comment this code
-        // Ensure the packet has sufficient length for an IPv6 header
-        if (length < sizeof(struct ip6_hdr)) {
-            log_android(ANDROID_LOG_WARN, "IP6 packet too short length %d", length);
-            return;
-        }
-
-        struct ip6_hdr *ip6hdr = (struct ip6_hdr *) pkt;
-
-        // Skip extension headers
-        uint16_t off = 0;
-        protocol = ip6hdr->ip6_nxt;
-        // Continue if the protocol is not an upper-layer protocol (e.g., TCP, UDP, etc.)
-        if (!is_upper_layer(protocol)) {
-            log_android(ANDROID_LOG_WARN, "IP6 extension %d", protocol);
-            off = sizeof(struct ip6_hdr);
-            struct ip6_ext *ext = (struct ip6_ext *) (pkt + off);
-            // Loop through the extension headers until an upper-layer protocol is found
-            while (is_lower_layer(ext->ip6e_nxt) && !is_upper_layer(protocol)) {
-                protocol = ext->ip6e_nxt;
-                log_android(ANDROID_LOG_WARN, "IP6 extension %d", protocol);
-
-                off += (8 + ext->ip6e_len);
-                ext = (struct ip6_ext *) (pkt + off);
-            }
-            if (!is_upper_layer(protocol)) {
-                off = 0;
-                protocol = ip6hdr->ip6_nxt;
-                log_android(ANDROID_LOG_WARN, "IP6 final extension %d", protocol);
-            }
-        }
-        saddr = &ip6hdr->ip6_src;
-        daddr = &ip6hdr->ip6_dst;
-        payload = (uint8_t *) (pkt + sizeof(struct ip6_hdr) + off);
-        // TODO checksum
+        log_android(ANDROID_LOG_ERROR, "version 6 is not supported");
     } else {
         log_android(ANDROID_LOG_ERROR, "Unknown version %d", version);
         return;
     }
 
     // Convert the source and destination addresses to string format
-    inet_ntop(version == 4 ? AF_INET : AF_INET6, saddr, source, sizeof(source));
-    inet_ntop(version == 4 ? AF_INET : AF_INET6, daddr, dest, sizeof(dest));
+    inet_ntop(AF_INET, saddr, source, sizeof(source));
+    inet_ntop(AF_INET, daddr, dest, sizeof(dest));
 
     // Initialize variables for tracking protocol-specific details (e.g., ports, flags)
     int syn = 0;
     uint16_t sport = 0;
     uint16_t dport = 0;
-    // Handle ICMP or ICMPv6 packets
-    if (protocol == IPPROTO_ICMP || protocol == IPPROTO_ICMPV6) {
+    // Handle ICMP packets
+    if (protocol == IPPROTO_ICMP) {
         if (length - (payload - pkt) < sizeof(struct icmp)) {
             log_android(ANDROID_LOG_WARN, "ICMP packet too short");
             return;
@@ -255,7 +215,7 @@ void handle_ip(const struct arguments *args,
     // Check if the number of current sessions has exceeded the maximum allowed sessions
     if (sessions >= maxsessions) {
         // Drop the packet if it's a new session (SYN for TCP, or a new ICMP/UDP packet)
-        if ((protocol == IPPROTO_ICMP || protocol == IPPROTO_ICMPV6) ||
+        if ((protocol == IPPROTO_ICMP) ||
             (protocol == IPPROTO_UDP && !has_udp_session(args, pkt, payload)) ||
             (protocol == IPPROTO_TCP && syn)) {
             log_android(ANDROID_LOG_ERROR, "%d of max %d sessions, dropping version %d protocol %d",
@@ -266,7 +226,7 @@ void handle_ip(const struct arguments *args,
 
     // Retrieve the UID (User ID) of the app sending/receiving this packet
     jint uid = -1;
-    if (protocol == IPPROTO_ICMP || protocol == IPPROTO_ICMPV6 ||
+    if (protocol == IPPROTO_ICMP ||
         (protocol == IPPROTO_UDP && !has_udp_session(args, pkt, payload)) ||
         (protocol == IPPROTO_TCP && syn))
         uid = get_uid(version, protocol, saddr, sport, daddr, dport);
@@ -295,7 +255,7 @@ void handle_ip(const struct arguments *args,
 
     // Handle allowed traffic
     if (allowed) {
-        if (protocol == IPPROTO_ICMP || protocol == IPPROTO_ICMPV6)
+        if (protocol == IPPROTO_ICMP)
             handle_icmp(args, pkt, length, payload, uid, epoll_fd);
         else if (protocol == IPPROTO_UDP)
             handle_udp(args, pkt, length, payload, uid, redirect, epoll_fd);
@@ -321,8 +281,8 @@ jint get_uid(const int version, const int protocol,
 
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
-    inet_ntop(version == 4 ? AF_INET : AF_INET6, saddr, source, sizeof(source));
-    inet_ntop(version == 4 ? AF_INET : AF_INET6, daddr, dest, sizeof(dest));
+    inet_ntop(AF_INET, saddr, source, sizeof(source));
+    inet_ntop(AF_INET, daddr, dest, sizeof(dest));
 
     struct timeval time;
     gettimeofday(&time, NULL);

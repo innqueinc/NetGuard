@@ -38,13 +38,9 @@ int check_tcp_session(const struct arguments *args, struct ng_session *s,
 
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
-    if (s->tcp.version == 4) {
-        inet_ntop(AF_INET, &s->tcp.saddr.ip4, source, sizeof(source));
-        inet_ntop(AF_INET, &s->tcp.daddr.ip4, dest, sizeof(dest));
-    } else {
-        inet_ntop(AF_INET6, &s->tcp.saddr.ip6, source, sizeof(source));
-        inet_ntop(AF_INET6, &s->tcp.daddr.ip6, dest, sizeof(dest));
-    }
+    inet_ntop(AF_INET, &s->tcp.saddr.ip4, source, sizeof(source));
+    inet_ntop(AF_INET, &s->tcp.daddr.ip4, dest, sizeof(dest));
+
 
     char session[250];
     sprintf(session, "TCP socket from %s/%u to %s/%u %s socket %d",
@@ -209,13 +205,9 @@ void check_tcp_socket(const struct arguments *args,
 
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
-    if (s->tcp.version == 4) {
-        inet_ntop(AF_INET, &s->tcp.saddr.ip4, source, sizeof(source));
-        inet_ntop(AF_INET, &s->tcp.daddr.ip4, dest, sizeof(dest));
-    } else {
-        inet_ntop(AF_INET6, &s->tcp.saddr.ip6, source, sizeof(source));
-        inet_ntop(AF_INET6, &s->tcp.daddr.ip6, dest, sizeof(dest));
-    }
+    inet_ntop(AF_INET, &s->tcp.saddr.ip4, source, sizeof(source));
+    inet_ntop(AF_INET, &s->tcp.daddr.ip4, dest, sizeof(dest));
+
     char session[250];
     sprintf(session, "TCP socket from %s/%u to %s/%u %s loc %u rem %u",
             source, ntohs(s->tcp.source), dest, ntohs(s->tcp.dest),
@@ -255,13 +247,9 @@ void check_tcp_socket(const struct arguments *args,
                 struct icmp_session sicmp;
                 memset(&sicmp, 0, sizeof(struct icmp_session));
                 sicmp.version = s->tcp.version;
-                if (s->tcp.version == 4) {
-                    sicmp.saddr.ip4 = (__be32) s->tcp.saddr.ip4;
-                    sicmp.daddr.ip4 = (__be32) s->tcp.daddr.ip4;
-                } else {
-                    memcpy(&sicmp.saddr.ip6, &s->tcp.saddr.ip6, 16);
-                    memcpy(&sicmp.daddr.ip6, &s->tcp.daddr.ip6, 16);
-                }
+                sicmp.saddr.ip4 = (__be32) s->tcp.saddr.ip4;
+                sicmp.daddr.ip4 = (__be32) s->tcp.daddr.ip4;
+
 
                 write_icmp(args, &sicmp, (uint8_t *) &icmp, 8);
             }
@@ -574,6 +562,7 @@ void check_tcp_socket(const struct arguments *args,
         s->tcp.remote_seq != oldremote)
         log_android(ANDROID_LOG_DEBUG, "%s new state", session);
 }
+
 // Function to handle and process TCP packets
 jboolean handle_tcp(const struct arguments *args,
                     const uint8_t *pkt, size_t length,
@@ -612,13 +601,9 @@ jboolean handle_tcp(const struct arguments *args,
     // Prepare logging by converting the source and destination IP addresses to human-readable strings
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
-    if (version == 4) {
-        inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
-        inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
-    } else {
-        inet_ntop(AF_INET6, &ip6->ip6_src, source, sizeof(source));
-        inet_ntop(AF_INET6, &ip6->ip6_dst, dest, sizeof(dest));
-    }
+    inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
+    inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
+
     // Prepare a string to represent the TCP flags for logging purposes
     char flags[10];
     int flen = 0;
@@ -705,13 +690,9 @@ jboolean handle_tcp(const struct arguments *args,
             s->tcp.sent = 0;
             s->tcp.received = 0;
 
-            if (version == 4) {
-                s->tcp.saddr.ip4 = (__be32) ip4->saddr;
-                s->tcp.daddr.ip4 = (__be32) ip4->daddr;
-            } else {
-                memcpy(&s->tcp.saddr.ip6, &ip6->ip6_src, 16);
-                memcpy(&s->tcp.daddr.ip6, &ip6->ip6_dst, 16);
-            }
+            s->tcp.saddr.ip4 = (__be32) ip4->saddr;
+            s->tcp.daddr.ip4 = (__be32) ip4->daddr;
+
 
             s->tcp.source = tcphdr->source;
             s->tcp.dest = tcphdr->dest;
@@ -770,13 +751,9 @@ jboolean handle_tcp(const struct arguments *args,
             rst.local_seq = ntohl(tcphdr->ack_seq);
             rst.remote_seq = ntohl(tcphdr->seq) + datalen + (tcphdr->syn || tcphdr->fin ? 1 : 0);
 
-            if (version == 4) {
-                rst.saddr.ip4 = (__be32) ip4->saddr;
-                rst.daddr.ip4 = (__be32) ip4->daddr;
-            } else {
-                memcpy(&rst.saddr.ip6, &ip6->ip6_src, 16);
-                memcpy(&rst.daddr.ip6, &ip6->ip6_dst, 16);
-            }
+            rst.saddr.ip4 = (__be32) ip4->saddr;
+            rst.daddr.ip4 = (__be32) ip4->daddr;
+
 
             rst.source = tcphdr->source;
             rst.dest = tcphdr->dest;
@@ -1034,39 +1011,23 @@ int open_tcp_socket(const struct arguments *args,
             log_android(ANDROID_LOG_WARN, "TCP%d SOCKS5 to %s/%u",
                         version, socks5_addr, socks5_port);
 
-            if (version == 4) {
-                addr4.sin_family = AF_INET;
-                inet_pton(AF_INET, socks5_addr, &addr4.sin_addr);
-                addr4.sin_port = htons(socks5_port);
-            } else {
-                addr6.sin6_family = AF_INET6;
-                inet_pton(AF_INET6, socks5_addr, &addr6.sin6_addr);
-                addr6.sin6_port = htons(socks5_port);
-            }
+            addr4.sin_family = AF_INET;
+            inet_pton(AF_INET, socks5_addr, &addr4.sin_addr);
+            addr4.sin_port = htons(socks5_port);
+
         } else {
-            if (version == 4) {
-                addr4.sin_family = AF_INET;
-                addr4.sin_addr.s_addr = (__be32) cur->daddr.ip4;
-                addr4.sin_port = cur->dest;
-            } else {
-                addr6.sin6_family = AF_INET6;
-                memcpy(&addr6.sin6_addr, &cur->daddr.ip6, 16);
-                addr6.sin6_port = cur->dest;
-            }
+            addr4.sin_family = AF_INET;
+            addr4.sin_addr.s_addr = (__be32) cur->daddr.ip4;
+            addr4.sin_port = cur->dest;
         }
     } else {
         log_android(ANDROID_LOG_WARN, "TCP%d redirect to %s/%u",
                     version, redirect->raddr, redirect->rport);
 
-        if (version == 4) {
-            addr4.sin_family = AF_INET;
-            inet_pton(AF_INET, redirect->raddr, &addr4.sin_addr);
-            addr4.sin_port = htons(redirect->rport);
-        } else {
-            addr6.sin6_family = AF_INET6;
-            inet_pton(AF_INET6, redirect->raddr, &addr6.sin6_addr);
-            addr6.sin6_port = htons(redirect->rport);
-        }
+        addr4.sin_family = AF_INET;
+        inet_pton(AF_INET, redirect->raddr, &addr4.sin_addr);
+        addr4.sin_port = htons(redirect->rport);
+
     }
 
     // Initiate connect
@@ -1171,35 +1132,9 @@ ssize_t write_tcp(const struct arguments *args, const struct tcp_session *cur,
         pseudo.ippseudo_dst.s_addr = (__be32) ip4->daddr;
         pseudo.ippseudo_p = ip4->protocol;
         pseudo.ippseudo_len = htons(sizeof(struct tcphdr) + optlen + datalen);
-
         csum = calc_checksum(0, (uint8_t *) &pseudo, sizeof(struct ippseudo));
     } else {
-        len = sizeof(struct ip6_hdr) + sizeof(struct tcphdr) + optlen + datalen;
-        buffer = malloc(len);
-        struct ip6_hdr *ip6 = (struct ip6_hdr *) buffer;
-        tcp = (struct tcphdr *) (buffer + sizeof(struct ip6_hdr));
-        options = buffer + sizeof(struct ip6_hdr) + sizeof(struct tcphdr);
-        if (datalen)
-            memcpy(buffer + sizeof(struct ip6_hdr) + sizeof(struct tcphdr) + optlen, data, datalen);
 
-        // Build IP6 header
-        memset(ip6, 0, sizeof(struct ip6_hdr));
-        ip6->ip6_ctlun.ip6_un1.ip6_un1_plen = htons(len - sizeof(struct ip6_hdr));
-        ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_TCP;
-        ip6->ip6_ctlun.ip6_un1.ip6_un1_hlim = IPDEFTTL;
-        ip6->ip6_ctlun.ip6_un2_vfc = 0x60;
-        memcpy(&(ip6->ip6_src), &cur->daddr.ip6, 16);
-        memcpy(&(ip6->ip6_dst), &cur->saddr.ip6, 16);
-
-        // Calculate TCP6 checksum
-        struct ip6_hdr_pseudo pseudo;
-        memset(&pseudo, 0, sizeof(struct ip6_hdr_pseudo));
-        memcpy(&pseudo.ip6ph_src, &ip6->ip6_dst, 16);
-        memcpy(&pseudo.ip6ph_dst, &ip6->ip6_src, 16);
-        pseudo.ip6ph_len = ip6->ip6_ctlun.ip6_un1.ip6_un1_plen;
-        pseudo.ip6ph_nxt = ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
-
-        csum = calc_checksum(0, (uint8_t *) &pseudo, sizeof(struct ip6_hdr_pseudo));
     }
 
 
