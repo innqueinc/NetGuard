@@ -220,29 +220,11 @@ struct ip6_hdr_pseudo {
     u_int8_t ip6ph_nxt;
 } __packed;
 
-// PCAP
-// https://wiki.wireshark.org/Development/LibpcapFileFormat
 
 typedef uint16_t guint16_t;
 typedef uint32_t guint32_t;
 typedef int32_t gint32_t;
 
-typedef struct pcap_hdr_s {
-    guint32_t magic_number;
-    guint16_t version_major;
-    guint16_t version_minor;
-    gint32_t thiszone;
-    guint32_t sigfigs;
-    guint32_t snaplen;
-    guint32_t network;
-} __packed pcap_hdr_s;
-
-typedef struct pcaprec_hdr_s {
-    guint32_t ts_sec;
-    guint32_t ts_usec;
-    guint32_t incl_len;
-    guint32_t orig_len;
-} __packed pcaprec_hdr_s;
 
 #define LINKTYPE_RAW 101
 
@@ -528,11 +510,8 @@ jobject create_packet(const struct arguments *args,
 void account_usage(const struct arguments *args, jint version, jint protocol,
                    const char *daddr, jint dport, jint uid, jlong sent, jlong received);
 
-void write_pcap_hdr();
 
-void write_pcap_rec(const uint8_t *buffer, size_t len);
 
-void write_pcap(const void *ptr, size_t len);
 
 int compare_u32(uint32_t seq1, uint32_t seq2);
 

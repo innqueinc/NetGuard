@@ -1,13 +1,18 @@
 #include "netguard.h"
 
-int32_t get_qname(const uint8_t *data, const size_t datalen, uint16_t off, char *qname) {
-    *qname = 0;
 
-    uint16_t c = 0;
-    uint8_t noff = 0;
-    uint16_t ptr = off;
-    uint8_t len = *(data + ptr);
+// Get the domain name (qname) from a DNS request/response starting at 'off' offset.
+int32_t get_qname(const uint8_t *data, const size_t datalen, uint16_t off, char *qname) {
+    *qname = 0; // Initialize the provided qname to an empty string
+
+    uint16_t c = 0; // Count of compressed pointers followed
+    uint8_t noff = 0; // Offset in the qname string
+    uint16_t ptr = off; // Current pointer in the data
+    uint8_t len = *(data + ptr); // Initial label length
+
+    // Loop through labels in the domain name
     while (len) {
+        // Check for DNS compression (pointer to another part of the message)
         if (len & 0xC0) {
             ptr = (uint16_t) ((len & 0x3F) * 256 + *(data + ptr + 1));
             len = *(data + ptr);
@@ -17,28 +22,28 @@ int32_t get_qname(const uint8_t *data, const size_t datalen, uint16_t off, char 
                 off += 2;
             }
         } else if (ptr + 1 + len <= datalen && noff + len <= DNS_QNAME_MAX) {
-            memcpy(qname + noff, data + ptr + 1, len);
-            *(qname + noff + len) = '.';
-            noff += (len + 1);
+            memcpy(qname + noff, data + ptr + 1, len); // Copy the label to the qname string
+            *(qname + noff + len) = '.';  // Add a dot separator
+            noff += (len + 1);  // Increase the qname string offset
 
-            ptr += (len + 1);
-            len = *(data + ptr);
+            ptr += (len + 1);  // Move to the next label
+            len = *(data + ptr); // Get the next label length
         } else
-            break;
+            break; // Exit if data is invalid or exceeds the maximum allowed size
     }
     ptr++;
 
     if (len > 0 || noff == 0) {
         log_android(ANDROID_LOG_ERROR, "DNS qname invalid len %d noff %d", len, noff);
-        return -1;
+        return -1; // Return error if the name is invalid or empty
     }
 
-    *(qname + noff - 1) = 0;
+    *(qname + noff - 1) = 0; // Null-terminate the qname string (removing the trailing dot)
     log_android(ANDROID_LOG_DEBUG, "qname %s", qname);
 
-    return (c ? off : ptr);
+    return (c ? off : ptr); // If compression was used, return the increased offset, otherwise return the pointer
 }
-
+// Parse a DNS response and log the details
 void parse_dns_response(const struct arguments *args, const struct udp_session *u,
                         const uint8_t *data, size_t *datalen) {
     if (*datalen < sizeof(struct dns_header) + 1) {
@@ -46,7 +51,7 @@ void parse_dns_response(const struct arguments *args, const struct udp_session *
         return;
     }
 
-    // Check if standard DNS query
+    // Check if this is a standard DNS query
     // TODO multiple qnames
     struct dns_header *dns = (struct dns_header *) data;
     int qcount = ntohs(dns->q_count);
@@ -167,7 +172,7 @@ void parse_dns_response(const struct arguments *args, const struct udp_session *
                     "DNS response qr %d opcode %d qcount %d acount %d",
                     dns->qr, dns->opcode, qcount, acount);
 }
-
+// Extract the query details from a DNS request
 int get_dns_query(const struct arguments *args, const struct udp_session *u,
                   const uint8_t *data, const size_t datalen,
                   uint16_t *qtype, uint16_t *qclass, char *qname) {
@@ -176,7 +181,7 @@ int get_dns_query(const struct arguments *args, const struct udp_session *u,
         return -1;
     }
 
-    // Check if standard DNS query
+    // Check if this is a standard DNS query
     // TODO multiple qnames
     const struct dns_header *dns = (struct dns_header *) data;
     int qcount = ntohs(dns->q_count);
@@ -196,7 +201,7 @@ int get_dns_query(const struct arguments *args, const struct udp_session *u,
 
     return -1;
 }
-
+// Check if a domain in a DNS request is blocked and if so, generate a negative response
 int check_domain(const struct arguments *args, const struct udp_session *u,
                  const uint8_t *data, const size_t datalen,
                  uint16_t qclass, uint16_t qtype, const char *name) {
@@ -207,14 +212,14 @@ int check_domain(const struct arguments *args, const struct udp_session *u,
 
         log_android(ANDROID_LOG_INFO, "DNS query type %d name %s blocked", qtype, name);
 
-        // Build response
+        // Build a negative response
         size_t rlen = datalen + sizeof(struct dns_rr) + (qtype == DNS_QTYPE_A ? 4 : 16);
         uint8_t *response = malloc(rlen);
 
-        // Copy header & query
+        // Copy the original header & query to the response
         memcpy(response, data, datalen);
 
-        // Modify copied header
+        // Modify the copied header to turn it into a response
         struct dns_header *rh = (struct dns_header *) response;
         rh->qr = 1;
         rh->aa = 0;
@@ -229,7 +234,7 @@ int check_domain(const struct arguments *args, const struct udp_session *u,
         rh->auth_count = 0;
         rh->add_count = 0;
 
-        // Build answer
+        // Build the answer section
         struct dns_rr *answer = (struct dns_rr *) (response + datalen);
         answer->qname_ptr = htons(sizeof(struct dns_header) | 0xC000);
         answer->qtype = htons(qtype);
@@ -237,7 +242,7 @@ int check_domain(const struct arguments *args, const struct udp_session *u,
         answer->ttl = htonl(DNS_TTL);
         answer->rdlength = htons(qtype == DNS_QTYPE_A ? 4 : 16);
 
-        // Add answer address
+        // Add the answer's IP address (either localhost for IPv4 or ::1 for IPv6)
         uint8_t *addr = response + datalen + sizeof(struct dns_rr);
         if (qtype == DNS_QTYPE_A)
             inet_pton(AF_INET, "127.0.0.1", addr);
@@ -249,7 +254,7 @@ int check_domain(const struct arguments *args, const struct udp_session *u,
         rh->rcode = (uint16_t) args->rcode;
         rh->ans_count = 0;
 
-        // Send response
+        // Send the response
         if (write_udp(args, u, response, rlen) < 0)
             log_android(ANDROID_LOG_WARN, "UDP DNS write error %d: %s", errno, strerror(errno));
 

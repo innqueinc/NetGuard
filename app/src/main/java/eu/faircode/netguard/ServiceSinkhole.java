@@ -3,13 +3,10 @@ package eu.faircode.netguard;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.VpnService;
 import android.os.Build;
-import android.os.Message;
 import android.os.ParcelFileDescriptor;
-import android.preference.PreferenceManager;
 import android.util.Log;
 
 import androidx.core.content.ContextCompat;
@@ -45,7 +42,6 @@ public class ServiceSinkhole extends VpnService {
 
     private native int[] jni_get_stats(long context);
 
-    private static native void jni_pcap(String name, int record_size, int file_size);
 
     private native void jni_socks5(String addr, int port, String username, String password);
 
