@@ -163,10 +163,7 @@ int is_event(int fd, short event) {
 int is_readable(int fd) {
     return is_event(fd, POLLIN);
 }
-// Check if a file descriptor is ready for writing.
-int is_writable(int fd) {
-    return is_event(fd, POLLOUT);
-}
+
 // Get the current time in milliseconds.
 long long get_ms() {
     struct timespec ts;

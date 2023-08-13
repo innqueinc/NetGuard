@@ -86,8 +86,7 @@ Java_eu_faircode_netguard_ServiceSinkhole_jni_1init(
     *socks5_username = 0;
     *socks5_password = 0;
 
-    if (pthread_mutex_init(&ctx->lock, NULL))
-        log_android(ANDROID_LOG_ERROR, "pthread_mutex_init failed");
+
 
     // Create signal pipe
     if (pipe(ctx->pipefds))
@@ -169,9 +168,6 @@ Java_eu_faircode_netguard_ServiceSinkhole_jni_1get_1stats(
         JNIEnv *env, jobject instance, jlong context) {
     struct context *ctx = (struct context *) context;
 
-    if (pthread_mutex_lock(&ctx->lock))
-        log_android(ANDROID_LOG_ERROR, "pthread_mutex_lock failed");
-
     jintArray jarray = (*env)->NewIntArray(env, 5);
     jint *jcount = (*env)->GetIntArrayElements(env, jarray, NULL);
 
@@ -190,8 +186,6 @@ Java_eu_faircode_netguard_ServiceSinkhole_jni_1get_1stats(
         s = s->next;
     }
 
-    if (pthread_mutex_unlock(&ctx->lock))
-        log_android(ANDROID_LOG_ERROR, "pthread_mutex_unlock failed");
 
     jcount[3] = 0;
     DIR *d = opendir("/proc/self/fd");
@@ -242,8 +236,7 @@ Java_eu_faircode_netguard_ServiceSinkhole_jni_1done(
 
     clear(ctx);
 
-    if (pthread_mutex_destroy(&ctx->lock))
-        log_android(ANDROID_LOG_ERROR, "pthread_mutex_destroy failed");
+
 
     for (int i = 0; i < 2; i++)
         if (close(ctx->pipefds[i]))

@@ -1,23 +1,24 @@
-#include <jni.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <time.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <setjmp.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <dirent.h>
-#include <poll.h>
-#include <sys/types.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <sys/epoll.h>
-#include <dlfcn.h>
-#include <sys/stat.h>
-#include <sys/resource.h>
-
+// Including necessary header files for various functionalities
+#include <jni.h> // Provides JNI (Java Native Interface) related functionalities
+#include <android/log.h> // Android logging
+#include <stdio.h> // For standard input-output functions
+#include <stdlib.h> // For standard library functions like memory allocations
+#include <ctype.h> // For character handling functions
+#include <time.h> // For time-related functions and structures
+#include <unistd.h> // For POSIX operating system API
+#include <setjmp.h> // For jump functions
+#include <errno.h> // For error number definitions
+#include <fcntl.h> // For file control options
+#include <dirent.h> // For directory entries
+#include <poll.h> // For poll system calls
+#include <sys/types.h> // For system data types
+#include <sys/ioctl.h> // For I/O control device specific operations
+#include <sys/socket.h> // For socket programming
+#include <sys/epoll.h> // For epoll system calls
+#include <dlfcn.h> // For dynamic linking
+#include <sys/stat.h> // For file status
+#include <sys/resource.h> // For resource operations
+// Various network related header files
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -28,48 +29,44 @@
 #include <netinet/tcp.h>
 #include <netinet/ip_icmp.h>
 #include <netinet/icmp6.h>
+#include <sys/system_properties.h>  // For system properties
 
-#include <android/log.h>
-#include <sys/system_properties.h>
 
-#define TAG "NetGuard.JNI"
+#define TAG "NetGuard.JNI" // Logging tag
 
-// #define PROFILE_JNI 5
 
+// Various constants for network handling
 #define EPOLL_TIMEOUT 3600 // seconds
 #define EPOLL_EVENTS 20
 #define EPOLL_MIN_CHECK 100 // milliseconds
-
+// Maximum message sizes for different protocols
 #define ICMP4_MAXMSG (IP_MAXPACKET - 20 - 8) // bytes (socket)
 #define ICMP6_MAXMSG (IPV6_MAXPACKET - 40 - 8) // bytes (socket)
 #define UDP4_MAXMSG (IP_MAXPACKET - 20 - 8) // bytes (socket)
 #define UDP6_MAXMSG (IPV6_MAXPACKET - 40 - 8) // bytes (socket)
 
+// Various timeout values
 #define ICMP_TIMEOUT 15 // seconds
-
 #define UDP_TIMEOUT_53 15 // seconds
 #define UDP_TIMEOUT_ANY 300 // seconds
 #define UDP_KEEP_TIMEOUT 60 // seconds
-
 #define TCP_INIT_TIMEOUT 30 // seconds ~net.inet.tcp.keepinit
 #define TCP_IDLE_TIMEOUT 3600 // seconds ~net.inet.tcp.keepidle
 #define TCP_CLOSE_TIMEOUT 30 // seconds
 #define TCP_KEEP_TIMEOUT 300 // seconds
 // https://en.wikipedia.org/wiki/Maximum_segment_lifetime
-
+// Session related constants
 #define SESSION_MAX 512 // number
 #define SESSION_LIMIT 30 // percent
-
 #define UID_MAX_AGE 30000 // milliseconds
-
 #define SOCKS5_NONE 1
 #define SOCKS5_HELLO 2
 #define SOCKS5_AUTH 3
 #define SOCKS5_CONNECT 4
 #define SOCKS5_CONNECTED 5
 
+// Structure definitions and other constants follow...
 struct context {
-    pthread_mutex_t lock;
     int pipefds[2];
     int stopping;
     int tun;
@@ -104,19 +101,15 @@ struct icmp_session {
     time_t time;
     jint uid;
     int version;
-
     union {
         __be32 ip4; // network notation
         struct in6_addr ip6;
     } saddr;
-
     union {
         __be32 ip4; // network notation
         struct in6_addr ip6;
     } daddr;
-
     uint16_t id;
-
     uint8_t stop;
 };
 
@@ -210,26 +203,9 @@ struct uid_cache_entry {
     long time;
 };
 
-// IPv6
 
-struct ip6_hdr_pseudo {
-    struct in6_addr ip6ph_src;
-    struct in6_addr ip6ph_dst;
-    u_int32_t ip6ph_len;
-    u_int8_t ip6ph_zero[3];
-    u_int8_t ip6ph_nxt;
-} __packed;
-
-
-typedef uint16_t guint16_t;
-typedef uint32_t guint32_t;
-typedef int32_t gint32_t;
-
-
-#define LINKTYPE_RAW 101
 
 // DNS
-
 #define DNS_QCLASS_IN 1
 #define DNS_QTYPE_A 1 // IPv4
 #define DNS_QTYPE_AAAA 28 // IPv6
@@ -240,16 +216,16 @@ typedef int32_t gint32_t;
 struct dns_header {
     uint16_t id; // identification number
 # if __BYTE_ORDER == __LITTLE_ENDIAN
-    uint16_t rd :1; // recursion desired
-    uint16_t tc :1; // truncated message
-    uint16_t aa :1; // authoritive answer
-    uint16_t opcode :4; // purpose of message
-    uint16_t qr :1; // query/response flag
-    uint16_t rcode :4; // response code
-    uint16_t cd :1; // checking disabled
-    uint16_t ad :1; // authenticated data
-    uint16_t z :1; // its z! reserved
-    uint16_t ra :1; // recursion available
+    uint16_t rd: 1; // recursion desired
+    uint16_t tc: 1; // truncated message
+    uint16_t aa: 1; // authoritive answer
+    uint16_t opcode: 4; // purpose of message
+    uint16_t qr: 1; // query/response flag
+    uint16_t rcode: 4; // response code
+    uint16_t cd: 1; // checking disabled
+    uint16_t ad: 1; // authenticated data
+    uint16_t z: 1; // its z! reserved
+    uint16_t ra: 1; // recursion available
 #elif __BYTE_ORDER == __BIG_ENDIAN
     uint16_t qr :1; // query/response flag
     uint16_t opcode :4; // purpose of message
@@ -300,15 +276,7 @@ typedef struct dhcp_packet {
     uint32_t option_format;
 } __packed dhcp_packet;
 
-typedef struct dhcp_option {
-    uint8_t code;
-    uint8_t length;
-} __packed dhcp_option;
-
 // Prototypes
-
-void handle_signal(int sig, siginfo_t *info, void *context);
-
 void *handle_events(void *a);
 
 void report_exit(const struct arguments *args, const char *fmt, ...);
@@ -366,10 +334,6 @@ uint32_t get_receive_window(const struct ng_session *cur);
 void check_tcp_socket(const struct arguments *args,
                       const struct epoll_event *ev,
                       const int epoll_fd);
-
-int is_lower_layer(int protocol);
-
-int is_upper_layer(int protocol);
 
 void handle_ip(const struct arguments *args,
                const uint8_t *buffer, size_t length,
@@ -440,7 +404,6 @@ int write_fin_ack(const struct arguments *args, struct tcp_session *cur);
 
 void write_rst(const struct arguments *args, struct tcp_session *cur);
 
-void write_rst_ack(const struct arguments *args, struct tcp_session *cur);
 
 ssize_t write_icmp(const struct arguments *args, const struct icmp_session *cur,
                    uint8_t *data, size_t datalen);
@@ -510,9 +473,6 @@ jobject create_packet(const struct arguments *args,
 void account_usage(const struct arguments *args, jint version, jint protocol,
                    const char *daddr, jint dport, jint uid, jlong sent, jlong received);
 
-
-
-
 int compare_u32(uint32_t seq1, uint32_t seq2);
 
 const char *strstate(const int state);
@@ -520,7 +480,5 @@ const char *strstate(const int state);
 char *hex(const u_int8_t *data, const size_t len);
 
 int is_readable(int fd);
-
-int is_writable(int fd);
 
 long long get_ms();

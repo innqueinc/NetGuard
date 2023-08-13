@@ -69,20 +69,6 @@ int check_tun(const struct arguments *args,
     return 0;
 }
 
-// https://en.wikipedia.org/wiki/IPv6_packet#Extension_headers
-// http://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml
-int is_lower_layer(int protocol) {
-    // No next header = 59
-    return (protocol == 0 || // Hop-by-Hop Options
-            protocol == 60 || // Destination Options (before routing header)
-            protocol == 43 || // Routing
-            protocol == 44 || // Fragment
-            protocol == 51 || // Authentication Header (AH)
-            protocol == 50 || // Encapsulating Security Payload (ESP)
-            protocol == 60 || // Destination Options (before upper-layer header)
-            protocol == 135); // Mobility
-}
-
 
 void handle_ip(const struct arguments *args,
                const uint8_t *pkt, const size_t length,
